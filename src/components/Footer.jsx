@@ -6,8 +6,8 @@ export function Footer({
   addressLine1 = "66-942 Kamakahala St,",
   addressLine2 = "Haleʻiwa HI",
   addressHref = "https://www.google.com/maps?q=66-942+Kamakahala+St,+Haleiwa+HI",
-  phone = "(808) 829-0609",
-  phoneHref = "tel:8088290609",
+  email = "cartern@stonebridgebuyers.com",
+  emailHref = "mailto:cartern@stonebridgebuyers.com",
   className,
 }) {
   return (
@@ -19,36 +19,6 @@ export function Footer({
 
         <Right>
           <RightCol>
-            <Label>Location</Label>
-            <Row>
-              <Icon viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 22s7-5.2 7-12a7 7 0 1 0-14 0c0 6.8 7 12 7 12Z"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                />
-                <circle
-                  cx="12"
-                  cy="10"
-                  r="3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                />
-              </Icon>
-              <AddressLink
-                href={addressHref}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Line>{addressLine1}</Line>
-                <Line>{addressLine2}</Line>
-              </AddressLink>
-            </Row>
-          </RightCol>
-
-          <RightCol>
             <Label>Contact</Label>
             <Row>
               <Icon viewBox="0 0 24 24" aria-hidden="true">
@@ -59,7 +29,7 @@ export function Footer({
                   strokeWidth="1.8"
                 />
               </Icon>
-              <PhoneLink href={phoneHref}>{phone}</PhoneLink>
+              <PhoneLink href={emailHref}>{email}</PhoneLink>
             </Row>
           </RightCol>
         </Right>

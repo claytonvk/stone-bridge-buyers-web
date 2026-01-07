@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://atlasequipmenthi.com/sitemap.xml
+Sitemap: https://stonebridgebuyers.com/sitemap.xml

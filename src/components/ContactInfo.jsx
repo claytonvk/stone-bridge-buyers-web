@@ -7,22 +7,6 @@ export function ContactInfo() {
       <Row>
         <Stack>
           <IconWrap aria-hidden>
-            <MapPinIcon />
-          </IconWrap>
-          <Title>Address</Title>
-          <Value>
-            <Link
-              href="https://www.google.com/maps/search/?api=1&query=68-670+Farrington+HWY,+Waialua,+HI"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-               68-670 Farrington HWY, Waialua, HI
-            </Link>
-          </Value>
-        </Stack>
-
-        <Stack>
-          <IconWrap aria-hidden>
             <PhoneIcon />
           </IconWrap>
           <Title>Phone</Title>
@@ -37,8 +21,8 @@ export function ContactInfo() {
           </IconWrap>
           <Title>Email</Title>
           <Value>
-            <Link href="mailto:cartern@atlasequipmenthi.com">
-              cartern@atlasequipmenthi.com
+            <Link href="mailto:cartern@stonebridgebuyers.com">
+              cartern@stonebridgebuyers.com
             </Link>
           </Value>
         </Stack>

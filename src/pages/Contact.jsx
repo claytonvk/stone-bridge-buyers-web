@@ -9,7 +9,7 @@ export default function Contact() {
       <Shell>
         <Title>Contact Us</Title>
         <SubTitle>
-          Reach out anytime. We service customers across all Hawaiian islands.
+          Reach out anytime. We are committed to ensuring customers recieve clear and direct support.
         </SubTitle>
         <OfferFormSection />
       </Shell>

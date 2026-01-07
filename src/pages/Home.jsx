@@ -12,6 +12,7 @@ function Home() {
 
   return (
     <>
+      <DeliveryBanner />
       <Banner />
       <TrustStrip onCtaClick={() => navigate("/contact")}/>
       <ProcessSection onCtaClick={() => navigate("/contact")}/>

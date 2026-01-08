@@ -1,11 +1,18 @@
-import React, { useMemo, useState } from "react";
-import styled from "styled-components";
+import React, { useMemo, useRef, useState } from "react";
+import styled, { keyframes } from "styled-components";
+import { IMaskInput } from "react-imask";
 
 /**
  * OfferFormSection
- * - Two-column layout (form left, benefits right) like your reference
- * - Matches your “slate/navy + dark glass” vibe (no logos/reviews)
- * - Submits to Formspree (JSON) with the same endpoint prop
+ * - Two-column layout (form left, benefits right)
+ * - Matches your “slate/navy + dark glass” vibe
+ * - Submits to Formspree (JSON)
+ * - Consent checkboxes:
+ *    - consentTransactional (required)
+ *    - consentMarketing (optional)
+ * - On submit without required consent:
+ *    - scrolls to consent block
+ *    - highlights + shakes briefly
  */
 export function OfferFormSection({
   formspreeEndpoint = "https://formspree.io/f/xvzgenvn",
@@ -36,6 +43,14 @@ export function OfferFormSection({
     zip: "",
   });
 
+  // ✅ consent states
+  const [consentTransactional, setConsentTransactional] = useState(false);
+  const [consentMarketing, setConsentMarketing] = useState(false);
+
+  // ✅ consent highlight UX
+  const consentRef = useRef(null);
+  const [consentAttention, setConsentAttention] = useState(false);
+
   const requiredKeys = useMemo(
     () => ["firstName", "lastName", "phone", "email", "streetAddress", "city", "state", "zip"],
     []
@@ -48,8 +63,19 @@ export function OfferFormSection({
     return hasRequired && emailOk && phoneOk;
   }, [form, requiredKeys]);
 
+  const canSubmit = isValid && consentTransactional && !isSubmitting;
+
   function update(key) {
     return (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
+  }
+
+  function drawAttentionToConsent() {
+    const el = consentRef.current;
+    if (el?.scrollIntoView) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    setConsentAttention(true);
+    window.setTimeout(() => setConsentAttention(false), 1100);
   }
 
   async function handleSubmit(e) {
@@ -62,10 +88,18 @@ export function OfferFormSection({
       return;
     }
 
+    if (!consentTransactional) {
+      setErrorMsg("Please check the first consent box to submit your request.");
+      drawAttentionToConsent();
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const payload = {
         ...form,
+        consentTransactional,
+        consentMarketing,
         source: "Offer Form Section",
       };
 
@@ -106,18 +140,16 @@ export function OfferFormSection({
             </FormTop>
 
             {submitState === "success" ? (
-              <Success>
-                ✅ Received — we’ll review and reach out shortly with next steps.
-              </Success>
+              <Success>✅ Received — we’ll review and reach out shortly with next steps.</Success>
             ) : (
-              <Form onSubmit={handleSubmit}>
+              <FormEl onSubmit={handleSubmit}>
                 <Grid2>
                   <Field>
                     <Label>
                       First name <Req>*</Req>
                     </Label>
                     <Input
-                      id='firstName'
+                      id="firstName"
                       value={form.firstName}
                       onChange={update("firstName")}
                       placeholder="First name"
@@ -130,7 +162,7 @@ export function OfferFormSection({
                       Last name <Req>*</Req>
                     </Label>
                     <Input
-                      id='lastName'
+                      id="lastName"
                       value={form.lastName}
                       onChange={update("lastName")}
                       placeholder="Last name"
@@ -142,13 +174,34 @@ export function OfferFormSection({
                     <Label>
                       Phone <Req>*</Req>
                     </Label>
-                    <Input
-                      id='phone'
-                      value={form.phone}
-                      onChange={update("phone")}
-                      placeholder="Phone"
+
+                    <PhoneMask
+                      id="phone"
+                      mask="(000) 000-0000"
+                      unmask={true} // digits only in `val`
+                      placeholder="(555) 123-4567"
                       autoComplete="tel"
                       inputMode="tel"
+                      value={form.phone}
+                      prepare={(str) => {
+                        const digits = String(str || "").replace(/\D/g, "");
+
+                        // Drop leading US country code if present
+                        if (digits.length >= 11 && digits.startsWith("1")) return digits.slice(1);
+
+                        return digits;
+                      }}
+                      onAccept={(val) => {
+                        let digits = String(val || "").replace(/\D/g, "");
+
+                        // Safety: strip leading 1
+                        if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+
+                        // Safety: never store more than 10 digits
+                        if (digits.length > 10) digits = digits.slice(0, 10);
+
+                        setForm((p) => ({ ...p, phone: digits }));
+                      }}
                     />
                   </Field>
 
@@ -157,7 +210,7 @@ export function OfferFormSection({
                       Email <Req>*</Req>
                     </Label>
                     <Input
-                      id='email'
+                      id="email"
                       value={form.email}
                       onChange={update("email")}
                       placeholder="Email"
@@ -172,7 +225,7 @@ export function OfferFormSection({
                     Street address <Req>*</Req>
                   </Label>
                   <Input
-                    id='streetAddress'
+                    id="streetAddress"
                     value={form.streetAddress}
                     onChange={update("streetAddress")}
                     placeholder="Street address"
@@ -183,7 +236,7 @@ export function OfferFormSection({
                 <Field>
                   <Label>Unit</Label>
                   <Input
-                    id='unit'
+                    id="unit"
                     value={form.unit}
                     onChange={update("unit")}
                     placeholder="Unit (optional)"
@@ -196,7 +249,7 @@ export function OfferFormSection({
                       City <Req>*</Req>
                     </Label>
                     <Input
-                      id='city'
+                      id="city"
                       value={form.city}
                       onChange={update("city")}
                       placeholder="City"
@@ -210,16 +263,58 @@ export function OfferFormSection({
                     </Label>
                     <Select value={form.state} onChange={update("state")} aria-label="State">
                       <option value="">Select…</option>
-                      <option value="HI">Hawaii (HI)</option>
+
+                      <option value="AL">Alabama (AL)</option>
                       <option value="AK">Alaska (AK)</option>
                       <option value="AZ">Arizona (AZ)</option>
+                      <option value="AR">Arkansas (AR)</option>
                       <option value="CA">California (CA)</option>
                       <option value="CO">Colorado (CO)</option>
+                      <option value="CT">Connecticut (CT)</option>
+                      <option value="DE">Delaware (DE)</option>
+                      <option value="DC">District of Columbia (DC)</option>
                       <option value="FL">Florida (FL)</option>
+                      <option value="GA">Georgia (GA)</option>
+                      <option value="HI">Hawaii (HI)</option>
+                      <option value="ID">Idaho (ID)</option>
+                      <option value="IL">Illinois (IL)</option>
+                      <option value="IN">Indiana (IN)</option>
+                      <option value="IA">Iowa (IA)</option>
+                      <option value="KS">Kansas (KS)</option>
+                      <option value="KY">Kentucky (KY)</option>
+                      <option value="LA">Louisiana (LA)</option>
+                      <option value="ME">Maine (ME)</option>
+                      <option value="MD">Maryland (MD)</option>
+                      <option value="MA">Massachusetts (MA)</option>
+                      <option value="MI">Michigan (MI)</option>
+                      <option value="MN">Minnesota (MN)</option>
+                      <option value="MS">Mississippi (MS)</option>
+                      <option value="MO">Missouri (MO)</option>
+                      <option value="MT">Montana (MT)</option>
+                      <option value="NE">Nebraska (NE)</option>
                       <option value="NV">Nevada (NV)</option>
+                      <option value="NH">New Hampshire (NH)</option>
+                      <option value="NJ">New Jersey (NJ)</option>
+                      <option value="NM">New Mexico (NM)</option>
+                      <option value="NY">New York (NY)</option>
+                      <option value="NC">North Carolina (NC)</option>
+                      <option value="ND">North Dakota (ND)</option>
+                      <option value="OH">Ohio (OH)</option>
+                      <option value="OK">Oklahoma (OK)</option>
                       <option value="OR">Oregon (OR)</option>
+                      <option value="PA">Pennsylvania (PA)</option>
+                      <option value="RI">Rhode Island (RI)</option>
+                      <option value="SC">South Carolina (SC)</option>
+                      <option value="SD">South Dakota (SD)</option>
+                      <option value="TN">Tennessee (TN)</option>
                       <option value="TX">Texas (TX)</option>
+                      <option value="UT">Utah (UT)</option>
+                      <option value="VT">Vermont (VT)</option>
+                      <option value="VA">Virginia (VA)</option>
                       <option value="WA">Washington (WA)</option>
+                      <option value="WV">West Virginia (WV)</option>
+                      <option value="WI">Wisconsin (WI)</option>
+                      <option value="WY">Wyoming (WY)</option>
                     </Select>
                   </Field>
 
@@ -228,7 +323,7 @@ export function OfferFormSection({
                       Zip <Req>*</Req>
                     </Label>
                     <Input
-                      id='zip'
+                      id="zip"
                       value={form.zip}
                       onChange={update("zip")}
                       placeholder="Zip"
@@ -238,18 +333,58 @@ export function OfferFormSection({
                   </Field>
                 </Grid3>
 
+                {/* ✅ Consent checkboxes */}
+                <ConsentBlock
+                  ref={consentRef}
+                  data-attention={consentAttention ? "true" : "false"}
+                  $attention={consentAttention}
+                >
+                  <ConsentRow>
+                    <CheckWrap>
+                      <Checkbox
+                        id="consent-transactional"
+                        type="checkbox"
+                        checked={consentTransactional}
+                        onChange={(e) => setConsentTransactional(e.target.checked)}
+                      />
+                    </CheckWrap>
+
+                    <ConsentLabel htmlFor="consent-transactional">
+                      By checking this box, I consent to receive transactional messages related to
+                      my account, orders, or services I have requested. These messages may include
+                      appointment reminders, order confirmations, and account notifications among
+                      others. Message frequency may vary. Message & Data rates may apply. Reply HELP
+                      for help or STOP to opt-out. <ReqInline>(required)</ReqInline>
+                    </ConsentLabel>
+                  </ConsentRow>
+
+                  <ConsentRow>
+                    <CheckWrap>
+                      <Checkbox
+                        id="consent-marketing"
+                        type="checkbox"
+                        checked={consentMarketing}
+                        onChange={(e) => setConsentMarketing(e.target.checked)}
+                      />
+                    </CheckWrap>
+
+                    <ConsentLabel htmlFor="consent-marketing">
+                      By checking this box, I consent to receive marketing and promotional messages,
+                      including special offers, discounts, new product updates among others. Message
+                      frequency may vary. Message & Data rates may apply. Reply HELP for help or STOP
+                      to opt-out.
+                    </ConsentLabel>
+                  </ConsentRow>
+                </ConsentBlock>
+
                 <BottomRow>
-                  <Submit
-                    type="submit"
-                    disabled={isSubmitting || !isValid}
-                    aria-disabled={isSubmitting || !isValid}
-                  >
+                  <Submit type="submit" disabled={!canSubmit} aria-disabled={!canSubmit}>
                     {isSubmitting ? "Submitting…" : "Submit"}
                   </Submit>
                 </BottomRow>
 
                 {!!errorMsg && <ErrorText>{errorMsg}</ErrorText>}
-              </Form>
+              </FormEl>
             )}
           </FormCard>
 
@@ -266,8 +401,7 @@ export function OfferFormSection({
             </BenefitList>
 
             <SideNote>
-              Prefer a quick call? Drop your phone number and a good time — we’ll
-              keep it simple.
+              Prefer a quick call? Drop your phone number and a good time — we’ll keep it simple.
             </SideNote>
           </SideCard>
         </CardGrid>
@@ -312,9 +446,7 @@ const CardBase = styled.div`
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 
-  box-shadow:
-    0 18px 45px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 `;
 
 const FormCard = styled(CardBase)`
@@ -356,7 +488,7 @@ const FormSubtitle = styled.p`
   line-height: 1.6;
 `;
 
-const Form = styled.form`
+const FormEl = styled.form`
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -394,6 +526,11 @@ const Req = styled.span`
   color: #7da8c1;
 `;
 
+const ReqInline = styled.span`
+  color: rgba(125, 168, 193, 0.9);
+  font-weight: 800;
+`;
+
 const ControlBase = styled.div`
   width: 100%;
   border-radius: 14px;
@@ -427,6 +564,20 @@ const Input = styled.input`
   }
 `;
 
+const PhoneMask = styled(IMaskInput)`
+  ${ControlBase};
+  display: block;
+  border-radius: 30px;
+  border: none;
+  width: 100%;
+  padding: 5px 15px;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.42);
+  }
+`;
+
+
 const Select = styled.select`
   ${ControlBase};
   appearance: none;
@@ -444,6 +595,67 @@ const Select = styled.select`
   option {
     color: #0b1220;
   }
+`;
+
+/* ✅ Consent attention animation */
+const shake = keyframes`
+  0% { transform: translateX(0); }
+  12% { transform: translateX(-6px); }
+  24% { transform: translateX(6px); }
+  36% { transform: translateX(-5px); }
+  48% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  72% { transform: translateX(3px); }
+  84% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+`;
+
+const ConsentBlock = styled.div`
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  border-radius: 14px;
+
+  ${({ $attention }) =>
+    $attention
+      ? `
+    background: rgba(220, 38, 38, 0.08);
+    border: 1px solid rgba(220, 38, 38, 0.22);
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.10);
+    padding: 12px;
+    animation: ${shake} 520ms ease-in-out;
+  `
+      : ``}
+`;
+
+const ConsentRow = styled.div`
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+`;
+
+const CheckWrap = styled.div`
+  padding-top: 3px;
+`;
+
+const Checkbox = styled.input`
+  width: 16px;
+  height: 16px;
+  accent-color: #7da8c1;
+  cursor: pointer;
+`;
+
+const ConsentLabel = styled.label`
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
 `;
 
 const BottomRow = styled.div`

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import styled from "styled-components";
+import styled, { keyframes } from "styled-components";
 import { IMaskInput } from "react-imask";
 
 export function Banner({
@@ -13,6 +13,14 @@ export function Banner({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
 
+  // ✅ Consent states
+  const [consentTransactional, setConsentTransactional] = useState(false); // required
+  const [consentMarketing, setConsentMarketing] = useState(false); // optional
+
+  // ✅ Consent highlight UX
+  const consentRef = useRef(null);
+  const [consentAttention, setConsentAttention] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -20,12 +28,14 @@ export function Banner({
   const addressInputRef = useRef(null);
 
   const canAdvance = address.trim().length >= 6;
+
+  // ✅ must include consentTransactional
   const canSubmit =
     canAdvance &&
     name.trim().length >= 2 &&
     email.trim().includes("@") &&
-    phone.length === 10;
-
+    phone.length === 10 &&
+    consentTransactional;
 
   function handleAddressSubmit(e) {
     e.preventDefault();
@@ -45,19 +55,50 @@ export function Banner({
     }, 0);
   }
 
+  function drawAttentionToConsent() {
+    const el = consentRef.current;
+    if (el?.scrollIntoView) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    setConsentAttention(true);
+    window.setTimeout(() => setConsentAttention(false), 1100);
+  }
+
   async function handleFinalSubmit(e) {
     e.preventDefault();
     setErrorMsg("");
     setSubmitState("idle");
 
-    if (!canSubmit) {
+    // Field validation (minus consent)
+    const baseValid =
+      canAdvance &&
+      name.trim().length >= 2 &&
+      email.trim().includes("@") &&
+      phone.length === 10;
+
+    if (!baseValid) {
       setErrorMsg("Please enter your contact info so we can send your offer.");
+      return;
+    }
+
+    // ✅ Consent validation
+    if (!consentTransactional) {
+      setErrorMsg("Please check the first consent box to submit your request.");
+      drawAttentionToConsent();
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const payload = { address, name, email, phone, source: "Hero Banner" };
+      const payload = {
+        address,
+        name,
+        email,
+        phone,
+        consentTransactional,
+        consentMarketing,
+        source: "Hero Banner",
+      };
 
       const res = await fetch(formspreeEndpoint, {
         method: "POST",
@@ -136,11 +177,7 @@ export function Banner({
                 <LockedLabel>Home address</LockedLabel>
 
                 <LockedPill>
-                  <LockedInput
-                    value={address}
-                    readOnly
-                    aria-label="Home address"
-                  />
+                  <LockedInput value={address} readOnly aria-label="Home address" />
                   <EditBtn type="button" onClick={handleEditAddress}>
                     Edit
                   </EditBtn>
@@ -186,23 +223,14 @@ export function Banner({
                           inputMode="tel"
                           value={phone}
                           prepare={(str) => {
-                            // Runs BEFORE IMask applies characters (typing/paste/autofill)
                             const digits = String(str || "").replace(/\D/g, "");
-
-                            // If the incoming chunk starts with 1 and is long enough, drop it
                             if (digits.length >= 11 && digits.startsWith("1")) return digits.slice(1);
-
                             return digits;
                           }}
                           onAccept={(val) => {
                             let digits = String(val || "").replace(/\D/g, "");
-
-                            // Safety: if any path still leaves a leading 1, remove it
                             if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
-
-                            // Safety: never store more than 10 digits
                             if (digits.length > 10) digits = digits.slice(0, 10);
-
                             setPhone(digits);
                           }}
                         />
@@ -210,16 +238,57 @@ export function Banner({
                     </ContactGrid>
 
                     <Hint>
-                      We’ll use this only to send your offer and follow up if
-                      needed.
+                      We’ll use this only to send your offer and follow up if needed.
                     </Hint>
+
+                    {/* ✅ Consent checkboxes */}
+                    <ConsentBlock
+                      ref={consentRef}
+                      $attention={consentAttention}
+                      aria-live="polite"
+                    >
+                      <ConsentRow>
+                        <CheckWrap>
+                          <Checkbox
+                            id="consent-transactional"
+                            type="checkbox"
+                            checked={consentTransactional}
+                            onChange={(e) => setConsentTransactional(e.target.checked)}
+                          />
+                        </CheckWrap>
+
+                        <ConsentLabel htmlFor="consent-transactional">
+                          By checking this box, I consent to receive transactional messages related
+                          to my account, orders, or services I have requested. These messages may
+                          include appointment reminders, order confirmations, and account
+                          notifications among others. Message frequency may vary. Message & Data
+                          rates may apply. Reply HELP for help or STOP to opt-out.{" "}
+                          <ReqInline>(required)</ReqInline>
+                        </ConsentLabel>
+                      </ConsentRow>
+
+                      <ConsentRow>
+                        <CheckWrap>
+                          <Checkbox
+                            id="consent-marketing"
+                            type="checkbox"
+                            checked={consentMarketing}
+                            onChange={(e) => setConsentMarketing(e.target.checked)}
+                          />
+                        </CheckWrap>
+
+                        <ConsentLabel htmlFor="consent-marketing">
+                          By checking this box, I consent to receive marketing and promotional
+                          messages, including special offers, discounts, new product updates among
+                          others. Message frequency may vary. Message & Data rates may apply. Reply
+                          HELP for help or STOP to opt-out.
+                        </ConsentLabel>
+                      </ConsentRow>
+                    </ConsentBlock>
                   </ContactWrap>
 
                   <BottomSubmitRow>
-                    <BottomSubmit
-                      type="submit"
-                      disabled={isSubmitting || !canSubmit}
-                    >
+                    <BottomSubmit type="submit" disabled={isSubmitting || !canSubmit}>
                       {isSubmitting ? "Submitting..." : "Submit"}
                     </BottomSubmit>
                   </BottomSubmitRow>
@@ -227,14 +296,10 @@ export function Banner({
                   {!!errorMsg && <ErrorText>{errorMsg}</ErrorText>}
                 </>
               ) : (
-                <Success>
-                  ✅ Got it — we’ll reach out soon with your offer options.
-                </Success>
+                <Success>Got it — we’ll reach out soon with your offer options!</Success>
               )}
 
-              {submitState === "error" && !!errorMsg && (
-                <ErrorText>{errorMsg}</ErrorText>
-              )}
+              {submitState === "error" && !!errorMsg && <ErrorText>{errorMsg}</ErrorText>}
             </Form>
           )}
 
@@ -443,7 +508,71 @@ const TrustLine = styled.div`
   }
 `;
 
-/* ---------------- layout styles ---------------- */
+/* ✅ Consent attention animation */
+const shake = keyframes`
+  0% { transform: translateX(0); }
+  12% { transform: translateX(-6px); }
+  24% { transform: translateX(6px); }
+  36% { transform: translateX(-5px); }
+  48% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  72% { transform: translateX(3px); }
+  84% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+`;
+
+const ConsentBlock = styled.div`
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  border-radius: 14px;
+
+  ${({ $attention }) =>
+    $attention
+      ? `
+    background: rgba(220, 38, 38, 0.08);
+    border: 1px solid rgba(220, 38, 38, 0.22);
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.10);
+    padding: 12px;
+    animation: ${shake} 520ms ease-in-out;
+  `
+      : ``}
+`;
+
+const ConsentRow = styled.div`
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+`;
+
+const CheckWrap = styled.div`
+  padding-top: 3px;
+`;
+
+const Checkbox = styled.input`
+  width: 16px;
+  height: 16px;
+  accent-color: #7da8c1;
+  cursor: pointer;
+`;
+
+const ConsentLabel = styled.label`
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+`;
+
+const ReqInline = styled.span`
+  color: rgba(125, 168, 193, 0.9);
+  font-weight: 800;
+`;
 
 const Wrap = styled.section`
   width: 100%;
@@ -603,7 +732,6 @@ const EditBtn = styled.button`
   }
 `;
 
-/* Contact grid */
 const ContactGrid = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr;

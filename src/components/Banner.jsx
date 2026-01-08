@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import styled from "styled-components";
+import { IMaskInput } from "react-imask";
 
 export function Banner({
   heroImageSrc = "/images/HouseBanner.jpg",
@@ -23,7 +24,8 @@ export function Banner({
     canAdvance &&
     name.trim().length >= 2 &&
     email.trim().includes("@") &&
-    phone.trim().length >= 7;
+    phone.length === 10;
+
 
   function handleAddressSubmit(e) {
     e.preventDefault();
@@ -59,7 +61,10 @@ export function Banner({
 
       const res = await fetch(formspreeEndpoint, {
         method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(payload),
       });
 
@@ -131,7 +136,11 @@ export function Banner({
                 <LockedLabel>Home address</LockedLabel>
 
                 <LockedPill>
-                  <LockedInput value={address} readOnly aria-label="Home address" />
+                  <LockedInput
+                    value={address}
+                    readOnly
+                    aria-label="Home address"
+                  />
                   <EditBtn type="button" onClick={handleEditAddress}>
                     Edit
                   </EditBtn>
@@ -168,25 +177,49 @@ export function Banner({
 
                       <FieldWide>
                         <Label>Phone</Label>
-                        <ContactInput
-                          id="contact-phone"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                          placeholder="Phone"
-                          aria-label="Phone"
+
+                        <PhoneMask
+                          mask="(000) 000-0000"
+                          unmask={true} // digits only in `val`
+                          placeholder="(555) 123-4567"
                           autoComplete="tel"
                           inputMode="tel"
+                          value={phone}
+                          prepare={(str) => {
+                            // Runs BEFORE IMask applies characters (typing/paste/autofill)
+                            const digits = String(str || "").replace(/\D/g, "");
+
+                            // If the incoming chunk starts with 1 and is long enough, drop it
+                            if (digits.length >= 11 && digits.startsWith("1")) return digits.slice(1);
+
+                            return digits;
+                          }}
+                          onAccept={(val) => {
+                            let digits = String(val || "").replace(/\D/g, "");
+
+                            // Safety: if any path still leaves a leading 1, remove it
+                            if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+
+                            // Safety: never store more than 10 digits
+                            if (digits.length > 10) digits = digits.slice(0, 10);
+
+                            setPhone(digits);
+                          }}
                         />
                       </FieldWide>
                     </ContactGrid>
 
                     <Hint>
-                      We’ll use this only to send your offer and follow up if needed.
+                      We’ll use this only to send your offer and follow up if
+                      needed.
                     </Hint>
                   </ContactWrap>
 
                   <BottomSubmitRow>
-                    <BottomSubmit type="submit" disabled={isSubmitting || !canSubmit}>
+                    <BottomSubmit
+                      type="submit"
+                      disabled={isSubmitting || !canSubmit}
+                    >
                       {isSubmitting ? "Submitting..." : "Submit"}
                     </BottomSubmit>
                   </BottomSubmitRow>
@@ -194,14 +227,18 @@ export function Banner({
                   {!!errorMsg && <ErrorText>{errorMsg}</ErrorText>}
                 </>
               ) : (
-                <Success>✅ Got it — we’ll reach out soon with your offer options.</Success>
+                <Success>
+                  ✅ Got it — we’ll reach out soon with your offer options.
+                </Success>
+              )}
+
+              {submitState === "error" && !!errorMsg && (
+                <ErrorText>{errorMsg}</ErrorText>
               )}
             </Form>
           )}
 
-          <TrustLine>
-            Trusted Home Buyers • Based in Texas
-          </TrustLine>
+          <TrustLine>Trusted Home Buyers • Based in Texas</TrustLine>
         </ContentPanel>
       </Frame>
     </Wrap>
@@ -305,7 +342,6 @@ const LockedInput = styled.input`
   }
 `;
 
-
 /* Step 2 contact */
 const ContactWrap = styled.div`
   margin-top: 14px;
@@ -319,6 +355,28 @@ const Label = styled.div`
   color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
   margin: 0 0 6px;
+`;
+
+const PhoneMask = styled(IMaskInput)`
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  outline: none;
+
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+
+  padding: 12px 12px;
+  font-size: 13px;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.42);
+  }
+
+  &:focus {
+    border-color: rgba(111, 136, 176, 0.55);
+    box-shadow: 0 0 0 4px rgba(111, 136, 176, 0.14);
+  }
 `;
 
 const ContactInput = styled.input`
@@ -385,7 +443,7 @@ const TrustLine = styled.div`
   }
 `;
 
-/* ---------------- styles ---------------- */
+/* ---------------- layout styles ---------------- */
 
 const Wrap = styled.section`
   width: 100%;
@@ -398,14 +456,9 @@ const Frame = styled.div`
   overflow: hidden;
 
   width: 100%;
-
-  /* ✅ Always keep margin between panel and edges */
   padding: clamp(14px, 3vw, 34px);
 
-  /* ✅ “hero-like” height that still lets content fit */
   min-height: clamp(700px, 60vh, 760px);
-
-  /* If content becomes taller than the min-height, the frame grows */
   height: auto;
 
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.55);
@@ -422,8 +475,6 @@ const BgImage = styled.img`
   width: 100%;
   height: 100%;
   object-fit: cover;
-
-  /* adjust per image */
   object-position: 58% 45%;
 
   filter: grayscale(0.45) contrast(1.1) brightness(0.95);
@@ -433,7 +484,6 @@ const BgImage = styled.img`
 const BgOverlay = styled.div`
   position: absolute;
   inset: 0;
-
   background: white;
   opacity: 0.5;
 `;
@@ -441,9 +491,7 @@ const BgOverlay = styled.div`
 const ContentPanel = styled.div`
   z-index: 1;
 
-  /* ✅ panel always fits with margin because Frame has padding */
   width: min(680px, 100%);
-
   padding: 30px 28px;
 
   background: #101217;
@@ -457,8 +505,6 @@ const ContentPanel = styled.div`
     0 18px 45px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
-  /* ✅ If the screen is super short and step 2 opens,
-     allow internal scroll instead of breaking layout */
   max-height: calc(100dvh - 48px);
   overflow: auto;
 

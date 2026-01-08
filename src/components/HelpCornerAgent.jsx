@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import styled from "styled-components";
 import { Button, Card, Form, Collapse, Spinner, Alert, Badge } from "react-bootstrap";
 import { ChatDotsFill } from "react-bootstrap-icons";
@@ -8,7 +8,6 @@ export default function HelpCornerAgent({
   subtitle = "How can we help?",
   position = { bottom: 18, right: 18 },
   accent = "#101217",
-  expandAfterMs = 15000,
   expandedWidth = 350,
 }) {
   const [open, setOpen] = useState(false);
@@ -22,15 +21,7 @@ export default function HelpCornerAgent({
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
 
-  const [hasWaited, setHasWaited] = useState(false);
   const [everOpened, setEverOpened] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setHasWaited(true), expandAfterMs);
-    return () => clearTimeout(t);
-  }, [expandAfterMs]);
-
-  const showLauncherCopy = hasWaited && !open && !everOpened;
 
   const canSend =
     message.trim().length >= 8 &&
@@ -291,16 +282,10 @@ export default function HelpCornerAgent({
             type="button"
             onClick={toggleOpen}
             $accent={accent}
-            $expanded={showLauncherCopy}
             $expandedWidth={expandedWidth}
             aria-expanded={open}
             aria-label={open ? "Close help" : "Open help"}
           >
-            <LauncherCopy $visible={showLauncherCopy}>
-              <span style={{ fontWeight: 900 }}>Need help?</span>
-              <span style={{ fontSize: 12, opacity: 0.9 }}>Message us</span>
-            </LauncherCopy>
-
             <BubbleIcon aria-hidden>
               <ChatDotsFill size={20} />
             </BubbleIcon>

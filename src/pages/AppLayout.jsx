@@ -2,6 +2,7 @@ import React from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import Home from "./Home.jsx";
 import About from "./About.jsx";
+import Legal from "./Legal.jsx";
 import { Header } from "../components/Header.jsx";
 import { Footer } from "../components/Footer.jsx";
 import { GlobalStyles } from "../styles/GlobalStyles.jsx";
@@ -32,6 +33,7 @@ export default function AppLayout() {
           <Route path="/" element={<Home />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/legal" element={<Legal />} />
           <Route path="/locations/:state" element={<Location />} />
         </Routes>
         <Footer />

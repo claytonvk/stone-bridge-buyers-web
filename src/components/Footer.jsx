@@ -1,5 +1,6 @@
 import React from "react";
 import styled from "styled-components";
+import { Link } from "react-router-dom";
 
 export function Footer({
   brand = "Stone Bridge Buyers · All Rights Reserved",
@@ -15,6 +16,7 @@ export function Footer({
         </Left>
 
         <Right>
+          {/* CONTACT */}
           <RightCol>
             <Label>Contact</Label>
             <Row>
@@ -31,11 +33,23 @@ export function Footer({
               <PhoneLink href={emailHref}>{email}</PhoneLink>
             </Row>
           </RightCol>
+
+          {/* LEGAL */}
+          <RightCol>
+            <Label>Legal</Label>
+            <Row>
+              <LegalLink to="/legal">
+                Privacy & Terms
+              </LegalLink>
+            </Row>
+          </RightCol>
         </Right>
       </Inner>
     </Wrap>
   );
 }
+
+/* ---------------- styles ---------------- */
 
 const Wrap = styled.footer`
   width: 100%;
@@ -113,12 +127,11 @@ const Icon = styled.svg`
   flex-shrink: 0;
 `;
 
-const AddressLink = styled.a`
-  text-decoration: none;
-  display: flex;
-  flex-direction: column;
+const PhoneLink = styled.a`
+  font-size: 12px;
+  font-weight: 600;
   color: #f3f4f6;
-  gap: 2px;
+  text-decoration: none;
 
   &:hover {
     text-decoration: underline;
@@ -126,13 +139,7 @@ const AddressLink = styled.a`
   }
 `;
 
-const Line = styled.div`
-  font-size: 12px;
-  font-weight: 500;
-  color: #f3f4f6;
-`;
-
-const PhoneLink = styled.a`
+const LegalLink = styled(Link)`
   font-size: 12px;
   font-weight: 600;
   color: #f3f4f6;

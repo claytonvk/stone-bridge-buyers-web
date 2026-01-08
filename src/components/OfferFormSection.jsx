@@ -8,7 +8,7 @@ import styled from "styled-components";
  * - Submits to Formspree (JSON) with the same endpoint prop
  */
 export function OfferFormSection({
-  formspreeEndpoint = "https://formspree.io/f/YOUR_FORM_ID",
+  formspreeEndpoint = "https://formspree.io/f/xvzgenvn",
   title = "Get Your Free Cash Offer",
   subtitle = "Tell us a little about the home — we’ll send a no-obligation offer.",
   benefitsTitle = "What you get",

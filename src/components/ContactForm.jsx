@@ -12,7 +12,7 @@ export function ContactForm() {
 
     formData.append("source", "Website Contact Form");
 
-    const res = await fetch("https://formspree.io/f/xnjapdra", {
+    const res = await fetch("https://formspree.io/f/xvzgenvn", {
       method: "POST",
       body: formData,
       headers: { Accept: "application/json" },

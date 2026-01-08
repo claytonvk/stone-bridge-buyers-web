@@ -121,7 +121,7 @@ export default function HelpCornerAgent({
       formData.append("phone", phone.trim());
       formData.append("message", message.trim());
 
-      const res = await fetch("https://formspree.io/f/xnjapdra", {
+      const res = await fetch("https://formspree.io/f/xwvpgjwd", {
         method: "POST",
         body: formData,
         headers: { Accept: "application/json" },

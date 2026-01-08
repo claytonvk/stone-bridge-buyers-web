@@ -3,9 +3,6 @@ import styled from "styled-components";
 
 export function Footer({
   brand = "Stone Bridge Buyers · All Rights Reserved",
-  addressLine1 = "66-942 Kamakahala St,",
-  addressLine2 = "Haleʻiwa HI",
-  addressHref = "https://www.google.com/maps?q=66-942+Kamakahala+St,+Haleiwa+HI",
   email = "cartern@stonebridgebuyers.com",
   emailHref = "mailto:cartern@stonebridgebuyers.com",
   className,
@@ -23,10 +20,12 @@ export function Footer({
             <Row>
               <Icon viewBox="0 0 24 24" aria-hidden="true">
                 <path
-                  d="M21 16.4v3a2 2 0 0 1-2.2 2c-8.9-.7-16-7.8-16.8-16.7A2 2 0 0 1 4 2.5h3a2 2 0 0 1 2 1.7c.2 1.2.5 2.4.9 3.5a2 2 0 0 1-.5 2.1L8.1 11c1.7 3 4.2 5.4 7.2 7.1l1.1-1.3a2 2 0 0 1 2.1-.5c1.1.4 2.3.7 3.5.9a2 2 0 0 1 1.7 2.2Z"
+                  d="M5.5 4h13A2.5 2.5 0 0 1 21 6.5v11A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-11A2.5 2.5 0 0 1 5.5 4Zm14.3 3.1-7.8 4.9-7.8-4.9"
                   fill="none"
-                  stroke="currentColor"
+                  stroke="white"
                   strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
               </Icon>
               <PhoneLink href={emailHref}>{email}</PhoneLink>

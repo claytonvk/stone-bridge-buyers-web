@@ -1,10 +1,11 @@
 import React, { useRef, useState } from "react";
 import styled, { keyframes } from "styled-components";
 import { IMaskInput } from "react-imask";
+import { supabase } from "../lib/supabaseClient";
 
 export function Banner({
   heroImageSrc = "/images/HouseBanner.jpg",
-  formspreeEndpoint = "https://formspree.io/f/xvzgenvn",
+  tableName = "quote_form_submissions",
 }) {
   const [step, setStep] = useState(1);
   const [address, setAddress] = useState("");
@@ -13,37 +14,35 @@ export function Banner({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
 
-  // ✅ Consent states
-  const [consentTransactional, setConsentTransactional] = useState(false); // required
-  const [consentMarketing, setConsentMarketing] = useState(false); // optional
+  const [smsSubscription, setSmsSubscription] = useState(false);
+  const [consentMarketing, setConsentMarketing] = useState(false);
 
-  // ✅ Consent highlight UX
   const consentRef = useRef(null);
   const [consentAttention, setConsentAttention] = useState(false);
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitState, setSubmitState] = useState("idle");
-  const [errorMsg, setErrorMsg] = useState("");
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState("");
 
   const addressInputRef = useRef(null);
 
   const canAdvance = address.trim().length >= 6;
 
-  // ✅ must include consentTransactional
   const canSubmit =
     canAdvance &&
     name.trim().length >= 2 &&
     email.trim().includes("@") &&
     phone.length === 10 &&
-    consentTransactional;
+    smsSubscription &&
+    status !== "sending";
 
   function handleAddressSubmit(e) {
     e.preventDefault();
-    setErrorMsg("");
-    setSubmitState("idle");
+    setError("");
+    setStatus("idle");
 
     if (!canAdvance) {
-      setErrorMsg("Please enter a valid home address.");
+      setError("Please enter a valid home address.");
+      setStatus("error");
       return;
     }
 
@@ -64,12 +63,23 @@ export function Banner({
     window.setTimeout(() => setConsentAttention(false), 1100);
   }
 
+  async function parseAddress(fullAddress) {
+    const { data, error } = await supabase.functions.invoke("parse-address", {
+      body: { address: fullAddress },
+    });
+
+    if (error) {
+      throw new Error(error.message || "Address parsing failed");
+    }
+
+    return data;
+  }
+
   async function handleFinalSubmit(e) {
     e.preventDefault();
-    setErrorMsg("");
-    setSubmitState("idle");
+    setError("");
+    setStatus("idle");
 
-    // Field validation (minus consent)
     const baseValid =
       canAdvance &&
       name.trim().length >= 2 &&
@@ -77,58 +87,69 @@ export function Banner({
       phone.length === 10;
 
     if (!baseValid) {
-      setErrorMsg("Please enter your contact info so we can send your offer.");
+      setError("Please enter your contact info so we can send your offer.");
+      setStatus("error");
       return;
     }
 
-    // ✅ Consent validation
-    if (!consentTransactional) {
-      setErrorMsg("Please check the first consent box to submit your request.");
+    if (!smsSubscription) {
+      setError("Please check the SMS consent box to submit your request.");
+      setStatus("error");
       drawAttentionToConsent();
       return;
     }
 
-    setIsSubmitting(true);
+    setStatus("sending");
+
     try {
-      const payload = {
-        address,
-        name,
-        email,
-        phone,
-        consentTransactional,
-        consentMarketing,
-        source: "Hero Banner",
-      };
+      const trimmedAddress = address.trim();
+      const trimmedName = name.trim().replace(/\s+/g, " ");
+      const first = trimmedName.split(" ")[0] || "";
+      const last = trimmedName.split(" ").slice(1).join(" ") || "";
 
-      const res = await fetch(formspreeEndpoint, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        const msg =
-          data?.errors?.[0]?.message ||
-          "Something went wrong submitting the form. Please try again.";
-        throw new Error(msg);
+      let parsed = {};
+      try {
+        parsed = await parseAddress(trimmedAddress);
+      } catch (err) {
+        console.error(err)
+        parsed = {};
       }
 
-      setSubmitState("success");
+      const payload = {
+        raw_address: trimmedAddress,
+        first_name: first,
+        last_name: last,
+        email: email.trim(),
+        phone: phone.trim(),
+        sms_subscription: smsSubscription,
+        consent_marketing: consentMarketing,
+
+        street_address:
+          parsed.street_address ||
+          parsed.streetAddress ||
+          parsed.address_line1 ||
+          parsed.line1 ||
+          null,
+        unit: parsed.unit || parsed.apt || parsed.apartment || parsed.suite || parsed.line2 || null,
+        city: parsed.city || parsed.town || parsed.village || null,
+        state: parsed.state || parsed.region || parsed.province || null,
+        zipcode: parsed.zipcode || parsed.zip || parsed.postal_code || null,
+      };
+
+      const { error: insertError } = await supabase.from(tableName).insert([payload]);
+
+      if (insertError) throw insertError;
+
+      setStatus("success");
     } catch (err) {
-      setSubmitState("error");
-      setErrorMsg(err?.message || "Submission failed. Please try again.");
-    } finally {
-      setIsSubmitting(false);
+      setStatus("error");
+      setError(err?.message || "Submission failed. Please try again.");
     }
   }
 
   function handleEditAddress() {
-    setSubmitState("idle");
-    setErrorMsg("");
+    setStatus("idle");
+    setError("");
     setStep(1);
   }
 
@@ -148,8 +169,8 @@ export function Banner({
           <Role>Local Home Buyers Who Make Selling Simple</Role>
 
           <Subhead>
-            Get a fair cash offer and decide what works best for you. No agents,
-            no fees, and no obligation.
+            Get a fair cash offer and decide what works best for you. No agents, no fees, and no
+            obligation.
           </Subhead>
 
           {step === 1 && (
@@ -167,7 +188,7 @@ export function Banner({
                 <PillButton type="submit">Get My Free Offer</PillButton>
               </Pill>
 
-              {!!errorMsg && <ErrorText>{errorMsg}</ErrorText>}
+              {!!error && <ErrorText>{error}</ErrorText>}
             </Form>
           )}
 
@@ -184,7 +205,7 @@ export function Banner({
                 </LockedPill>
               </AddressLockRow>
 
-              {submitState !== "success" ? (
+              {status !== "success" ? (
                 <>
                   <ContactWrap>
                     <ContactGrid>
@@ -217,7 +238,7 @@ export function Banner({
 
                         <PhoneMask
                           mask="(000) 000-0000"
-                          unmask={true} // digits only in `val`
+                          unmask={true}
                           placeholder="(555) 123-4567"
                           autoComplete="tel"
                           inputMode="tel"
@@ -237,33 +258,24 @@ export function Banner({
                       </FieldWide>
                     </ContactGrid>
 
-                    <Hint>
-                      We’ll use this only to send your offer and follow up if needed.
-                    </Hint>
+                    <Hint>We’ll use this only to send your offer and follow up if needed.</Hint>
 
-                    {/* ✅ Consent checkboxes */}
-                    <ConsentBlock
-                      ref={consentRef}
-                      $attention={consentAttention}
-                      aria-live="polite"
-                    >
+                    <ConsentBlock ref={consentRef} $attention={consentAttention} aria-live="polite">
                       <ConsentRow>
                         <CheckWrap>
                           <Checkbox
-                            id="consent-transactional"
+                            id="sms-subscription"
                             type="checkbox"
-                            checked={consentTransactional}
-                            onChange={(e) => setConsentTransactional(e.target.checked)}
+                            checked={smsSubscription}
+                            onChange={(e) => setSmsSubscription(e.target.checked)}
                           />
                         </CheckWrap>
 
-                        <ConsentLabel htmlFor="consent-transactional">
-                          By checking this box, I consent to receive transactional messages related
-                          to my account, orders, or services I have requested. These messages may
-                          include appointment reminders, order confirmations, and account
-                          notifications among others. Message frequency may vary. Message & Data
-                          rates may apply. Reply HELP for help or STOP to opt-out.{" "}
-                          <ReqInline>(required)</ReqInline>
+                        <ConsentLabel htmlFor="sms-subscription">
+                          I agree to receive text messages from Stone Bridge Buyers at the phone number
+                          provided, including messages about my request, scheduling, and offer updates.
+                          Message frequency varies. Message &amp; data rates may apply. Reply STOP to
+                          cancel, HELP for help. <ReqInline>(required)</ReqInline>
                         </ConsentLabel>
                       </ConsentRow>
 
@@ -278,28 +290,24 @@ export function Banner({
                         </CheckWrap>
 
                         <ConsentLabel htmlFor="consent-marketing">
-                          By checking this box, I consent to receive marketing and promotional
-                          messages, including special offers, discounts, new product updates among
-                          others. Message frequency may vary. Message & Data rates may apply. Reply
-                          HELP for help or STOP to opt-out.
+                          I agree to receive marketing texts and promotional offers. Message frequency
+                          varies. Message &amp; data rates may apply. Reply STOP to cancel, HELP for help.
                         </ConsentLabel>
                       </ConsentRow>
                     </ConsentBlock>
                   </ContactWrap>
 
                   <BottomSubmitRow>
-                    <BottomSubmit type="submit" disabled={isSubmitting || !canSubmit}>
-                      {isSubmitting ? "Submitting..." : "Submit"}
+                    <BottomSubmit type="submit" disabled={status === "sending" || !canSubmit}>
+                      {status === "sending" ? "Submitting..." : "Submit"}
                     </BottomSubmit>
                   </BottomSubmitRow>
 
-                  {!!errorMsg && <ErrorText>{errorMsg}</ErrorText>}
+                  {!!error && <ErrorText>{error}</ErrorText>}
                 </>
               ) : (
                 <Success>Got it — we’ll reach out soon with your offer options!</Success>
               )}
-
-              {submitState === "error" && !!errorMsg && <ErrorText>{errorMsg}</ErrorText>}
             </Form>
           )}
 
@@ -309,8 +317,6 @@ export function Banner({
     </Wrap>
   );
 }
-
-/* ---------------- styles ---------------- */
 
 const Kicker = styled.div`
   color: rgba(255, 255, 255, 0.65);
@@ -383,7 +389,6 @@ const PillInput = styled.input`
   }
 `;
 
-/* Step 2 address lock */
 const AddressLockRow = styled.div`
   margin-top: 2px;
 `;
@@ -407,7 +412,6 @@ const LockedInput = styled.input`
   }
 `;
 
-/* Step 2 contact */
 const ContactWrap = styled.div`
   margin-top: 14px;
   padding-top: 12px;
@@ -508,7 +512,6 @@ const TrustLine = styled.div`
   }
 `;
 
-/* ✅ Consent attention animation */
 const shake = keyframes`
   0% { transform: translateX(0); }
   12% { transform: translateX(-6px); }
@@ -654,7 +657,6 @@ const Form = styled.form`
   }
 `;
 
-/* Step 1 pill */
 const Pill = styled.div`
   display: grid;
   grid-template-columns: minmax(0, 1fr) 190px;
@@ -695,7 +697,6 @@ const PillButton = styled.button`
   }
 `;
 
-/* Step 2 address lock */
 const LockedPill = styled.div`
   display: grid;
   grid-template-columns: minmax(0, 1fr) 88px;

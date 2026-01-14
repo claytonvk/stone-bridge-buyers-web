@@ -1,21 +1,10 @@
 import React, { useMemo, useRef, useState } from "react";
 import styled, { keyframes } from "styled-components";
 import { IMaskInput } from "react-imask";
+import { supabase } from "../lib/supabaseClient";
 
-/**
- * OfferFormSection
- * - Two-column layout (form left, benefits right)
- * - Matches your “slate/navy + dark glass” vibe
- * - Submits to Formspree (JSON)
- * - Consent checkboxes:
- *    - consentTransactional (required)
- *    - consentMarketing (optional)
- * - On submit without required consent:
- *    - scrolls to consent block
- *    - highlights + shakes briefly
- */
 export function OfferFormSection({
-  formspreeEndpoint = "https://formspree.io/f/xvzgenvn",
+  tableName = "quote_form_submissions",
   title = "Get Your Free Cash Offer",
   subtitle = "Tell us a little about the home — we’ll send a no-obligation offer.",
   benefitsTitle = "What you get",
@@ -28,42 +17,41 @@ export function OfferFormSection({
   ],
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitState, setSubmitState] = useState("idle"); // idle | success | error
+  const [submitState, setSubmitState] = useState("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
   const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
+    first_name: "",
+    last_name: "",
     phone: "",
     email: "",
-    streetAddress: "",
+    street_address: "",
     unit: "",
     city: "",
     state: "",
-    zip: "",
+    zipcode: "",
   });
 
-  // ✅ consent states
-  const [consentTransactional, setConsentTransactional] = useState(false);
-  const [consentMarketing, setConsentMarketing] = useState(false);
+  const [sms_subscription, setSmsSubscription] = useState(false);
+  const [consent_marketing, setConsentMarketing] = useState(false);
 
-  // ✅ consent highlight UX
   const consentRef = useRef(null);
   const [consentAttention, setConsentAttention] = useState(false);
 
   const requiredKeys = useMemo(
-    () => ["firstName", "lastName", "phone", "email", "streetAddress", "city", "state", "zip"],
+    () => ["first_name", "last_name", "phone", "email", "street_address", "city", "state", "zipcode"],
     []
   );
 
   const isValid = useMemo(() => {
     const hasRequired = requiredKeys.every((k) => String(form[k] || "").trim().length > 0);
-    const emailOk = form.email.includes("@");
-    const phoneOk = form.phone.replace(/\D/g, "").length >= 7;
+    const emailOk = String(form.email || "").includes("@");
+    const phoneDigits = String(form.phone || "").replace(/\D/g, "");
+    const phoneOk = phoneDigits.length === 10;
     return hasRequired && emailOk && phoneOk;
   }, [form, requiredKeys]);
 
-  const canSubmit = isValid && consentTransactional && !isSubmitting;
+  const canSubmit = isValid && sms_subscription && !isSubmitting;
 
   function update(key) {
     return (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
@@ -88,8 +76,8 @@ export function OfferFormSection({
       return;
     }
 
-    if (!consentTransactional) {
-      setErrorMsg("Please check the first consent box to submit your request.");
+    if (!sms_subscription) {
+      setErrorMsg("Please check the SMS consent box to submit your request.");
       drawAttentionToConsent();
       return;
     }
@@ -98,27 +86,14 @@ export function OfferFormSection({
     try {
       const payload = {
         ...form,
-        consentTransactional,
-        consentMarketing,
-        source: "Offer Form Section",
+        phone: String(form.phone || "").replace(/\D/g, "").slice(0, 10),
+        sms_subscription,
+        consent_marketing,
       };
 
-      const res = await fetch(formspreeEndpoint, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+      const { error } = await supabase.from(tableName).insert([payload]);
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        const msg =
-          data?.errors?.[0]?.message ||
-          "Something went wrong submitting the form. Please try again.";
-        throw new Error(msg);
-      }
+      if (error) throw error;
 
       setSubmitState("success");
     } catch (err) {
@@ -149,9 +124,9 @@ export function OfferFormSection({
                       First name <Req>*</Req>
                     </Label>
                     <Input
-                      id="firstName"
-                      value={form.firstName}
-                      onChange={update("firstName")}
+                      id="first_name"
+                      value={form.first_name}
+                      onChange={update("first_name")}
                       placeholder="First name"
                       autoComplete="given-name"
                     />
@@ -162,9 +137,9 @@ export function OfferFormSection({
                       Last name <Req>*</Req>
                     </Label>
                     <Input
-                      id="lastName"
-                      value={form.lastName}
-                      onChange={update("lastName")}
+                      id="last_name"
+                      value={form.last_name}
+                      onChange={update("last_name")}
                       placeholder="Last name"
                       autoComplete="family-name"
                     />
@@ -178,28 +153,20 @@ export function OfferFormSection({
                     <PhoneMask
                       id="phone"
                       mask="(000) 000-0000"
-                      unmask={true} // digits only in `val`
+                      unmask={true}
                       placeholder="(555) 123-4567"
                       autoComplete="tel"
                       inputMode="tel"
                       value={form.phone}
                       prepare={(str) => {
                         const digits = String(str || "").replace(/\D/g, "");
-
-                        // Drop leading US country code if present
                         if (digits.length >= 11 && digits.startsWith("1")) return digits.slice(1);
-
                         return digits;
                       }}
                       onAccept={(val) => {
                         let digits = String(val || "").replace(/\D/g, "");
-
-                        // Safety: strip leading 1
                         if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
-
-                        // Safety: never store more than 10 digits
                         if (digits.length > 10) digits = digits.slice(0, 10);
-
                         setForm((p) => ({ ...p, phone: digits }));
                       }}
                     />
@@ -225,9 +192,9 @@ export function OfferFormSection({
                     Street address <Req>*</Req>
                   </Label>
                   <Input
-                    id="streetAddress"
-                    value={form.streetAddress}
-                    onChange={update("streetAddress")}
+                    id="street_address"
+                    value={form.street_address}
+                    onChange={update("street_address")}
                     placeholder="Street address"
                     autoComplete="street-address"
                   />
@@ -235,12 +202,7 @@ export function OfferFormSection({
 
                 <Field>
                   <Label>Unit</Label>
-                  <Input
-                    id="unit"
-                    value={form.unit}
-                    onChange={update("unit")}
-                    placeholder="Unit (optional)"
-                  />
+                  <Input id="unit" value={form.unit} onChange={update("unit")} placeholder="Unit (optional)" />
                 </Field>
 
                 <Grid3>
@@ -320,20 +282,19 @@ export function OfferFormSection({
 
                   <Field>
                     <Label>
-                      Zip <Req>*</Req>
+                      Zipcode <Req>*</Req>
                     </Label>
                     <Input
-                      id="zip"
-                      value={form.zip}
-                      onChange={update("zip")}
-                      placeholder="Zip"
+                      id="zipcode"
+                      value={form.zipcode}
+                      onChange={update("zipcode")}
+                      placeholder="Zipcode"
                       autoComplete="postal-code"
                       inputMode="numeric"
                     />
                   </Field>
                 </Grid3>
 
-                {/* ✅ Consent checkboxes */}
                 <ConsentBlock
                   ref={consentRef}
                   data-attention={consentAttention ? "true" : "false"}
@@ -342,37 +303,34 @@ export function OfferFormSection({
                   <ConsentRow>
                     <CheckWrap>
                       <Checkbox
-                        id="consent-transactional"
+                        id="sms_subscription"
                         type="checkbox"
-                        checked={consentTransactional}
-                        onChange={(e) => setConsentTransactional(e.target.checked)}
+                        checked={sms_subscription}
+                        onChange={(e) => setSmsSubscription(e.target.checked)}
                       />
                     </CheckWrap>
 
-                    <ConsentLabel htmlFor="consent-transactional">
-                      By checking this box, I consent to receive transactional messages related to
-                      my account, orders, or services I have requested. These messages may include
-                      appointment reminders, order confirmations, and account notifications among
-                      others. Message frequency may vary. Message & Data rates may apply. Reply HELP
-                      for help or STOP to opt-out. <ReqInline>(required)</ReqInline>
+                    <ConsentLabel htmlFor="sms_subscription">
+                      I agree to receive text messages from Stone Bridge Buyers at the phone number provided,
+                      including messages about my request, scheduling, and offer updates. Message frequency
+                      varies. Message &amp; data rates may apply. Reply STOP to cancel, HELP for help.{" "}
+                      <ReqInline>(required)</ReqInline>
                     </ConsentLabel>
                   </ConsentRow>
 
                   <ConsentRow>
                     <CheckWrap>
                       <Checkbox
-                        id="consent-marketing"
+                        id="consent_marketing"
                         type="checkbox"
-                        checked={consentMarketing}
+                        checked={consent_marketing}
                         onChange={(e) => setConsentMarketing(e.target.checked)}
                       />
                     </CheckWrap>
 
-                    <ConsentLabel htmlFor="consent-marketing">
-                      By checking this box, I consent to receive marketing and promotional messages,
-                      including special offers, discounts, new product updates among others. Message
-                      frequency may vary. Message & Data rates may apply. Reply HELP for help or STOP
-                      to opt-out.
+                    <ConsentLabel htmlFor="consent_marketing">
+                      I agree to receive marketing texts and promotional offers. Message frequency varies.
+                      Message &amp; data rates may apply. Reply STOP to cancel, HELP for help.
                     </ConsentLabel>
                   </ConsentRow>
                 </ConsentBlock>
@@ -409,8 +367,6 @@ export function OfferFormSection({
     </Wrap>
   );
 }
-
-/* ---------------- styles ---------------- */
 
 const Wrap = styled.section`
   width: 100%;
@@ -577,7 +533,6 @@ const PhoneMask = styled(IMaskInput)`
   }
 `;
 
-
 const Select = styled.select`
   ${ControlBase};
   appearance: none;
@@ -597,7 +552,6 @@ const Select = styled.select`
   }
 `;
 
-/* ✅ Consent attention animation */
 const shake = keyframes`
   0% { transform: translateX(0); }
   12% { transform: translateX(-6px); }
@@ -722,7 +676,6 @@ const Success = styled.div`
   line-height: 1.5;
 `;
 
-/* side */
 const SideTitle = styled.h3`
   margin: 0 0 12px;
   color: rgba(255, 255, 255, 0.92);

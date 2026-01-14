@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { supabase } from "../lib/supabaseClient";
 import styled from "styled-components";
 import { Button, Card, Form, Collapse, Spinner, Alert, Badge } from "react-bootstrap";
 import { ChatDotsFill } from "react-bootstrap-icons";
@@ -7,7 +8,7 @@ export default function HelpCornerAgent({
   brand = "Help Desk",
   subtitle = "How can we help?",
   position = { bottom: 18, right: 18 },
-  accent = "#101217",
+  accent = "#2f2f32",
   expandedWidth = 350,
 }) {
   const [open, setOpen] = useState(false);
@@ -47,88 +48,31 @@ export default function HelpCornerAgent({
     });
   };
 
-  const prettyField = (field) => {
-    const map = {
-      email: "Email",
-      phone: "Phone",
-      firstName: "First name",
-      lastName: "Last name",
-      message: "Message",
-    };
-    return map[field] || "This field";
-  };
-
-  const prettyCode = (code) => {
-    const map = {
-      TYPE_EMAIL: "Please enter a valid email address.",
-      TYPE_URL: "Please enter a valid URL.",
-      REQUIRED_FIELD: "This field is required.",
-      EMPTY: "This field can’t be empty.",
-    };
-    return map[code] || null;
-  };
-
-  const friendlyFormspreeError = async (res) => {
-    let fallback = "Something went wrong. Please try again.";
-
-    try {
-      const data = await res.json();
-
-      if (data?.errors?.length) {
-        const first = data.errors[0];
-        const codeMsg = prettyCode(first.code);
-        const fieldLabel = prettyField(first.field);
-
-        return (
-          codeMsg ||
-          (first.message
-            ? `${fieldLabel}: ${first.message}`
-            : `${fieldLabel}: Please check this field and try again.`)
-        );
-      }
-
-      if (data?.error && typeof data.error === "string") return data.error;
-      return fallback;
-    } catch {
-      try {
-        const text = await res.text();
-        return text?.trim() ? "Something went wrong. Please check your info and try again." : fallback;
-      } catch {
-        return fallback;
-      }
-    }
-  };
-
   const send = async () => {
     setStatus("sending");
     setError("");
 
     try {
-      const formData = new FormData();
-      formData.append("source", brand);
-      formData.append("firstName", firstName.trim());
-      formData.append("lastName", lastName.trim());
-      formData.append("email", email.trim());
-      formData.append("phone", phone.trim());
-      formData.append("message", message.trim());
+      const payload = {
+        first_name: firstName.trim() || null,
+        last_name: lastName.trim() || null,
+        email: email.trim(),
+        phone: phone.trim(),
+        message: message.trim(),
+      };
 
-      const res = await fetch("https://formspree.io/f/xwvpgjwd", {
-        method: "POST",
-        body: formData,
-        headers: { Accept: "application/json" },
-      });
+      const { error } = await supabase.from("help_agent_submissions").insert([payload]);
 
-      if (!res.ok) {
-        const msg = await friendlyFormspreeError(res);
-        throw new Error(msg);
-      }
+      if (error) throw error;
 
       setStatus("sent");
     } catch (e) {
+      console.error(e);
       setStatus("error");
       setError(e?.message || "Something went wrong.");
     }
   };
+
 
   return (
     <Wrap style={{ bottom: position.bottom, right: position.right }}>
@@ -215,6 +159,7 @@ export default function HelpCornerAgent({
                       </Form.Label>
                       <Form.Control
                         size="sm"
+                        type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="Email"
@@ -286,6 +231,11 @@ export default function HelpCornerAgent({
             aria-expanded={open}
             aria-label={open ? "Close help" : "Open help"}
           >
+            <LauncherCopy>
+              <span style={{ fontWeight: 900 }}>Need help?</span>
+              <span style={{ fontSize: 12, opacity: 0.9 }}>Message us</span>
+            </LauncherCopy>
+
             <BubbleIcon aria-hidden>
               <ChatDotsFill size={20} />
             </BubbleIcon>
@@ -417,7 +367,7 @@ const Dot = styled.div`
 
 const FormTheme = styled.div`
   .form-control:focus {
-    border-color: #7da8c1 !important;
-    box-shadow: 0 0 0 0.2rem #7da8c1(218, 82, 71, 0.28) !important;
+    border-color: #da5247 !important;
+    box-shadow: 0 0 0 0.2rem rgba(218, 82, 71, 0.28) !important;
   }
 `;

@@ -38,7 +38,7 @@ export function Footer({
           <RightCol>
             <Label>Legal</Label>
             <Row>
-              <LegalLink to="/legal">
+              <LegalLink to="/legal/privacy">
                 Privacy & Terms
               </LegalLink>
             </Row>

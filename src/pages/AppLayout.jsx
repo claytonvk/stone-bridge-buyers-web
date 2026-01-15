@@ -18,6 +18,7 @@ import AdminDashboard from "./Admin/Dashboard.jsx";
 import AdminForms from "./Admin/Forms.jsx";
 import { AdminHeader } from "../components/AdminHeader.jsx";
 import Sms from "./Admin/Sms.jsx";
+import Leads from "./Admin/Leads.jsx";
 
 export default function AppLayout() {
   const { pathname } = useLocation();
@@ -56,7 +57,8 @@ export default function AppLayout() {
 
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
-          <Route path="/legal" element={<Legal />} />
+          <Route path="/legal" element={<Navigate to="/legal/privacy" replace />} />
+          <Route path="/legal/:section" element={<Legal />} />
           <Route path="/locations/:state" element={<Location />} />
 
           <Route path="/login" element={<Login />} />
@@ -74,6 +76,7 @@ export default function AppLayout() {
             <Route path="sms" element={<Sms />} />
             <Route index element={<AdminDashboard />} />
             <Route path="forms" element={<AdminForms />} />
+            <Route path="leads" element={<Leads />} />
 
             {/* Any /admin/* unknown routes go back to dashboard */}
             <Route path="*" element={<Navigate to="/admin" replace />} />

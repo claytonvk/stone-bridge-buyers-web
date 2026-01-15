@@ -275,7 +275,16 @@ export function Banner({
                           I agree to receive text messages from Stone Bridge Buyers at the phone number
                           provided, including messages about my request, scheduling, and offer updates.
                           Message frequency varies. Message &amp; data rates may apply. Reply STOP to
-                          cancel, HELP for help. <ReqInline>(required)</ReqInline>
+                          cancel, HELP for help. See our
+                          <a
+                            href="/legal/sms"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ textDecoration: "underline", fontWeight: 800, color: 'white', padding: "0 4px" }}
+                          >
+                            SMS Messaging Terms
+                          </a>
+                          . <ReqInline>(required)</ReqInline>
                         </ConsentLabel>
                       </ConsentRow>
 

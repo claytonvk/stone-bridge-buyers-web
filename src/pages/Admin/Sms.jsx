@@ -1,20 +1,38 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import styled, { keyframes } from "styled-components";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "../../lib/supabaseClient";
 
 /**
- * Admin SMS Campaign Builder (UI-only)
- * - No Twilio integration yet
- * - Stores drafts in local state for now
- * - You can swap to Supabase later easily
+ * SMS Campaigns Admin
+ * - Campaigns stored in sms_campaigns
+ * - Steps stored in sms_campaign_messages (step_order + offset_minutes + body)
+ * - Activate schedules an initial start time and enqueues ALL steps for eligible recipients
+ * - Enroll New Leads: enrolls newly eligible leads and enqueues all steps for them
  */
 
+const KINDS = [
+  { key: "transactional", label: "Transactional (requires SMS subscription)" },
+  { key: "marketing", label: "Marketing (requires SMS + marketing consent)" },
+];
+
+// For now you only support quote_form_submissions as a source.
+// Keep “audience” UI if you want, but it maps to the same table today.
+const AUDIENCES = [
+  {
+    key: "quote_form_submissions",
+    label: "Quote Form Submissions",
+    help: "Leads captured on your quote form.",
+    target_table: "quote_form_submissions",
+  },
+];
+
 const DEFAULT_SAMPLE = {
-  first_name: "Clay",
-  last_name: "Vander Kolk",
-  city: "Haleiwa",
-  state: "HI",
-  phone: "(808) 555-1234",
+  first_name: "Joe",
+  last_name: "Smith",
+  city: "Houston",
+  state: "Tx",
+  phone: "(713) 555-1234",
 };
 
 const MERGE_FIELDS = [
@@ -24,153 +42,344 @@ const MERGE_FIELDS = [
   { key: "state", label: "State" },
 ];
 
-const AUDIENCES = [
-  {
-    key: "quote_form_sms_opt_in",
-    label: "Quote Form — SMS Opt-In",
-    help: "People who checked SMS consent on the quote form.",
-  },
-  {
-    key: "help_agent_sms_opt_in",
-    label: "Help Agent — SMS Opt-In",
-    help: "People who checked SMS consent on help agent form (if you add it later).",
-  },
-  {
-    key: "all_opt_in",
-    label: "All Opt-In",
-    help: "All contacts you’ve collected that have SMS consent.",
-  },
-];
+function toDatetimeLocalValue(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
 
-const initialCampaigns = [
-  {
-    id: "cmp_001",
-    name: "New Lead Follow-Up (Draft)",
-    type: "one_time",
-    audience: "quote_form_sms_opt_in",
-    message:
-      "Hey {{first_name}} — this is Stone Bridge Buyers. Want a quick cash-offer estimate for {{city}}? Reply YES and we’ll text a few questions.",
-    status: "draft",
-    schedule: null,
-    updated_at: new Date().toISOString(),
-  },
-];
+function fromDatetimeLocalToIso(v) {
+  if (!v) return null;
+  // "YYYY-MM-DDTHH:mm" -> Date -> ISO
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
 
 export default function Sms({ title = "SMS Campaigns" }) {
   const navigate = useNavigate();
 
-  const [campaigns, setCampaigns] = useState(initialCampaigns);
-  const [activeId, setActiveId] = useState(initialCampaigns?.[0]?.id || null);
-
-  const active = useMemo(
-    () => campaigns.find((c) => c.id === activeId) || null,
-    [campaigns, activeId]
-  );
+  const [campaigns, setCampaigns] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [loadingList, setLoadingList] = useState(true);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [draft, setDraft] = useState(null);
 
   const [sample, setSample] = useState(DEFAULT_SAMPLE);
 
-  const openNew = () => {
-    const now = new Date().toISOString();
+  const [activeSteps, setActiveSteps] = useState([]);
+
+  const active = useMemo(
+    () => campaigns.find((c) => c.id === activeId) || null,
+    [campaigns, activeId]
+  );
+
+  async function reloadCampaigns(selectId = null) {
+    setLoadingList(true);
+    const { data, error } = await supabase
+      .from("sms_campaigns")
+      .select("id, name, status, kind, target_table, timezone, started_at, updated_at, created_at, description")
+      .order("updated_at", { ascending: false });
+
+    setLoadingList(false);
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setCampaigns(data || []);
+    if (selectId) setActiveId(selectId);
+    else setActiveId((data?.[0]?.id) || null);
+  }
+
+  async function fetchSteps(campaignId) {
+    const { data, error } = await supabase
+      .from("sms_campaign_messages")
+      .select("id, step_order, offset_minutes, body")
+      .eq("campaign_id", campaignId)
+      .order("step_order", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      return [];
+    }
+    return data || [];
+  }
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      await reloadCampaigns();
+      if (!alive) return;
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!activeId) {
+        setActiveSteps([]);
+        return;
+      }
+      const steps = await fetchSteps(activeId);
+      if (!alive) return;
+      setActiveSteps(steps || []);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [activeId]);
+
+  function openNew() {
     setDraft({
-      id: `cmp_${Math.random().toString(16).slice(2, 8)}`,
+      id: null,
       name: "",
-      type: "one_time",
-      audience: "quote_form_sms_opt_in",
-      message: "",
+      description: "",
       status: "draft",
-      schedule: null,
-      updated_at: now,
+      kind: "transactional",
+      target_table: "quote_form_submissions",
+      timezone: "America/Chicago",
+      started_at: null, // set on activate
+      schedule_local: "", // datetime-local UI input
+      steps: [
+        // default step 0
+        { id: null, step_order: 0, offset_days: 0, offset_hours: 0, body: "" },
+      ],
     });
     setDrawerOpen(true);
-  };
+  }
 
-  const openEdit = (c) => {
-    setDraft({ ...c });
+  async function openEdit(c) {
+    const steps = await fetchSteps(c.id);
+    setDraft({
+      id: c.id,
+      name: c.name || "",
+      description: c.description || "",
+      status: c.status || "draft",
+      kind: c.kind || "transactional",
+      target_table: c.target_table || "quote_form_submissions",
+      timezone: c.timezone || "America/Chicago",
+      started_at: c.started_at || null,
+      schedule_local: toDatetimeLocalValue(c.started_at),
+      steps:
+        steps.length > 0
+          ? steps.map((s) => {
+              const mins = Number(s.offset_minutes ?? 0);
+              const days = Math.floor(mins / (60 * 24));
+              const hours = Math.floor((mins - days * 60 * 24) / 60);
+              return {
+                id: s.id,
+                step_order: s.step_order ?? 0,
+                offset_days: days,
+                offset_hours: hours,
+                body: s.body ?? "",
+              };
+            })
+          : [{ id: null, step_order: 0, offset_minutes: 0, body: "" }],
+    });
     setDrawerOpen(true);
-  };
+  }
 
-  const closeDrawer = () => {
+  function closeDrawer() {
     setDrawerOpen(false);
     setDraft(null);
-  };
+  }
 
-  const saveDraft = () => {
-    if (!draft) return;
-    const next = {
-      ...draft,
-      name: (draft.name || "").trim() || "Untitled campaign",
-      updated_at: new Date().toISOString(),
-      status: "draft",
-    };
+  function normalizeSteps(steps) {
+    // UI stores offset_days/offset_hours, DB stores offset_minutes
+    const normalized = (steps || []).map((s, idx) => {
+      const days = Number.isFinite(Number(s.offset_days)) ? Number(s.offset_days) : 0;
+      const hours = Number.isFinite(Number(s.offset_hours)) ? Number(s.offset_hours) : 0;
 
-    setCampaigns((prev) => {
-      const exists = prev.some((x) => x.id === next.id);
-      if (exists) return prev.map((x) => (x.id === next.id ? next : x));
-      return [next, ...prev];
+      const clampedDays = Math.max(0, Math.floor(days));
+      const clampedHours = Math.max(0, Math.floor(hours));
+
+      const offset_minutes = clampedDays * 24 * 60 + clampedHours * 60;
+
+      return {
+        ...s,
+        step_order: idx,
+        offset_days: clampedDays,
+        offset_hours: clampedHours,
+        offset_minutes,
+        body: s.body ?? "",
+      };
     });
 
-    setActiveId(next.id);
-    setDrawerOpen(false);
-    setDraft(null);
-  };
+    return normalized;
+  }
 
-  const scheduleCampaign = () => {
-    if (!draft) return;
-    // UI-only schedule: set a fake schedule time
-    const schedule = draft.schedule || new Date(Date.now() + 60 * 60 * 1000).toISOString(); // +1h
-    const next = {
-      ...draft,
-      name: (draft.name || "").trim() || "Untitled campaign",
-      schedule,
-      updated_at: new Date().toISOString(),
-      status: "scheduled",
-    };
+  async function saveCampaign({ keepDrawerOpen = false } = {}) {
+    if (!draft) return null;
 
-    setCampaigns((prev) => prev.map((x) => (x.id === next.id ? next : x)));
-    setActiveId(next.id);
-    setDrawerOpen(false);
-    setDraft(null);
-  };
+    const name = (draft.name || "").trim() || "Untitled campaign";
+    const kind = draft.kind || "transactional";
+    const target_table = draft.target_table || "quote_form_submissions";
 
-  const duplicateCampaign = (c) => {
-    const copy = {
-      ...c,
-      id: `cmp_${Math.random().toString(16).slice(2, 8)}`,
-      name: `${c.name} (Copy)`,
+    const campaignPayload = {
+      ...(draft.id ? { id: draft.id } : {}),
+      name,
+      description: (draft.description || "").trim() || null,
       status: "draft",
-      schedule: null,
-      updated_at: new Date().toISOString(),
+      kind,
+      target_table,
+      timezone: draft.timezone || "America/Chicago",
     };
-    setCampaigns((prev) => [copy, ...prev]);
-    setActiveId(copy.id);
-  };
 
-  const archiveCampaign = (c) => {
-    const ok = window.confirm("Archive this campaign? You can keep it for reference.");
-    if (!ok) return;
-    setCampaigns((prev) =>
-      prev.map((x) => (x.id === c.id ? { ...x, status: "archived", updated_at: new Date().toISOString() } : x))
+    // Upsert campaign
+    const { data: camp, error: campErr } = await supabase
+      .from("sms_campaigns")
+      .upsert(campaignPayload)
+      .select("id")
+      .single();
+
+    if (campErr) {
+      throw new Error(`Failed to save campaign: ${campErr.message}`);
+    }
+
+    const campaignId = camp.id;
+
+    // Load existing steps (to delete removed ones)
+    const existing = await fetchSteps(campaignId);
+    const existingIds = new Set(existing.map((s) => s.id));
+
+    const steps = normalizeSteps(draft.steps);
+
+    // Upsert steps
+    for (const s of steps) {
+      const payload = {
+        ...(s.id ? { id: s.id } : {}),
+        campaign_id: campaignId,
+        step_order: s.step_order,
+        offset_minutes: s.offset_minutes,
+        body: s.body || "",
+        requires_marketing_consent: kind === "marketing",
+      };
+
+      const { error } = await supabase.from("sms_campaign_messages").upsert(payload);
+      if (error) {
+        throw new Error(`Failed to save step ${s.step_order}: ${error.message}`);
+      }
+    }
+
+    // Delete steps removed from UI
+    const keptIds = new Set(steps.map((s) => s.id).filter(Boolean));
+    const toDelete = [...existingIds].filter((id) => id && !keptIds.has(id));
+    if (toDelete.length > 0) {
+      const { error } = await supabase
+        .from("sms_campaign_messages")
+        .delete()
+        .in("id", toDelete);
+
+      if (error) {
+        throw new Error(`Failed to delete removed steps: ${error.message}`);
+      }
+    }
+
+    await reloadCampaigns(campaignId);
+
+    setDraft((p) => (p ? { ...p, id: campaignId, steps } : p));
+
+    if (!keepDrawerOpen) closeDrawer();
+    return campaignId;
+  }
+
+  async function activateCampaign() {
+    if (!draft) return;
+
+    // Save first (keeps drawer open so you can see status)
+    const campaignId = await saveCampaign({ keepDrawerOpen: true });
+
+    const scheduleIso =
+      fromDatetimeLocalToIso(draft.schedule_local) || new Date().toISOString();
+
+    const { data, error } = await supabase.rpc("activate_sms_campaign", {
+      p_campaign_id: campaignId,
+      p_schedule_at: scheduleIso,
+    });
+
+    if (error) throw new Error(`Activate failed: ${error.message}`);
+
+    // Refresh list + keep drawer open with updated started_at
+    await reloadCampaigns(campaignId);
+    setDraft((p) =>
+      p
+        ? {
+            ...p,
+            status: "active",
+            started_at: scheduleIso,
+          }
+        : p
     );
-  };
 
-  const deleteCampaign = (c) => {
-    const ok = window.confirm("Delete this campaign? This cannot be undone.");
-    if (!ok) return;
-    setCampaigns((prev) => prev.filter((x) => x.id !== c.id));
-    if (activeId === c.id) setActiveId(null);
-  };
+    alert(
+      `Activated.\nRecipients added: ${data?.recipients_added ?? 0}\nOutbox added: ${data?.outbox_added ?? 0}\nStart: ${new Date(
+        scheduleIso
+      ).toLocaleString()}`
+    );
+  }
+
+  async function enrollNewLeads() {
+    if (!active?.id) return;
+    const { data, error } = await supabase.rpc("enroll_new_leads", {
+      p_campaign_id: active.id,
+    });
+    if (error) throw new Error(`Enroll failed: ${error.message}`);
+
+    alert(
+      `Enrolled.\nRecipients added: ${data?.recipients_added ?? 0}\nOutbox added: ${data?.outbox_added ?? 0}`
+    );
+  }
+
+  function addStep() {
+    setDraft((p) => {
+      if (!p) return p;
+      const nextSteps = normalizeSteps([
+        ...(p.steps || []),
+        { id: null, step_order: (p.steps || []).length, offset_days: 0, offset_hours: 1, body: "" },
+      ]);
+      return { ...p, steps: nextSteps };
+    });
+  }
+
+  function removeStep(idx) {
+    setDraft((p) => {
+      if (!p) return p;
+      const next = (p.steps || []).filter((_, i) => i !== idx);
+      const normalized = normalizeSteps(next.length ? next : [{ id: null, step_order: 0, offset_minutes: 0, body: "" }]);
+      return { ...p, steps: normalized };
+    });
+  }
+
+  function moveStep(idx, dir) {
+    setDraft((p) => {
+      if (!p) return p;
+      const arr = [...(p.steps || [])];
+      const nextIdx = idx + dir;
+      if (nextIdx < 0 || nextIdx >= arr.length) return p;
+      const tmp = arr[idx];
+      arr[idx] = arr[nextIdx];
+      arr[nextIdx] = tmp;
+      return { ...p, steps: normalizeSteps(arr) };
+    });
+  }
 
   return (
     <Page>
       <Top>
         <Left>
           <H1>{title}</H1>
-          <Sub>
-            Build campaigns now; plug in Twilio later. Keep it consent-only.
-          </Sub>
+          <Sub>Build multi-step drip campaigns. Consent-gated. Scheduled start time.</Sub>
         </Left>
 
         <Right>
@@ -183,20 +392,14 @@ export default function Sms({ title = "SMS Campaigns" }) {
         <Panel>
           <PanelTop>
             <PanelTitle>Campaigns</PanelTitle>
-            <SmallMeta>{campaigns.length} total</SmallMeta>
+            <SmallMeta>{loadingList ? "Loading…" : `${campaigns.length} total`}</SmallMeta>
           </PanelTop>
 
           <List>
             {campaigns.map((c) => {
               const isActive = c.id === activeId;
               return (
-                <Row
-                  key={c.id}
-                  $active={isActive}
-                  onClick={() => setActiveId(c.id)}
-                  role="button"
-                  tabIndex={0}
-                >
+                <Row key={c.id} $active={isActive} onClick={() => setActiveId(c.id)} role="button" tabIndex={0}>
                   <RowTop>
                     <RowName>{c.name}</RowName>
                     <Pill $tone={c.status}>{prettyStatus(c.status)}</Pill>
@@ -204,33 +407,25 @@ export default function Sms({ title = "SMS Campaigns" }) {
 
                   <RowMeta>
                     <MetaItem>
-                      <strong>Audience:</strong>{" "}
-                      <span>{audienceLabel(c.audience)}</span>
+                      <strong>Kind:</strong> <span>{c.kind}</span>
                     </MetaItem>
                     <MetaItem>
-                      <strong>Type:</strong>{" "}
-                      <span>{c.type === "one_time" ? "One-time" : "Drip"}</span>
+                      <strong>Source:</strong> <span>{c.target_table}</span>
                     </MetaItem>
                   </RowMeta>
 
                   <RowBottom>
                     <Tiny>{timeAgo(c.updated_at)}</Tiny>
-                    <Tiny>
-                      {c.status === "scheduled" && c.schedule
-                        ? `Scheduled ${formatShort(c.schedule)}`
-                        : " "}
-                    </Tiny>
+                    <Tiny>{c.started_at ? `Start ${formatShort(c.started_at)}` : " "}</Tiny>
                   </RowBottom>
                 </Row>
               );
             })}
 
-            {campaigns.length === 0 && (
+            {!loadingList && campaigns.length === 0 && (
               <Empty>
                 <strong>No campaigns yet.</strong>
-                <div style={{ marginTop: 6, opacity: 0.75 }}>
-                  Click “New campaign” to start.
-                </div>
+                <div style={{ marginTop: 6, opacity: 0.75 }}>Click “New campaign” to start.</div>
               </Empty>
             )}
           </List>
@@ -245,9 +440,7 @@ export default function Sms({ title = "SMS Campaigns" }) {
           {!active ? (
             <Empty>
               <strong>Select a campaign.</strong>
-              <div style={{ marginTop: 6, opacity: 0.75 }}>
-                Choose one on the left or create a new one.
-              </div>
+              <div style={{ marginTop: 6, opacity: 0.75 }}>Choose one on the left or create a new one.</div>
             </Empty>
           ) : (
             <Detail>
@@ -255,36 +448,33 @@ export default function Sms({ title = "SMS Campaigns" }) {
                 <DetailTitle>{active.name}</DetailTitle>
                 <DetailActions>
                   <Btn onClick={() => openEdit(active)}>Edit</Btn>
-                  <Btn onClick={() => duplicateCampaign(active)}>Duplicate</Btn>
-                  <DangerGhost onClick={() => archiveCampaign(active)}>Archive</DangerGhost>
-                  <Danger onClick={() => deleteCampaign(active)}>Delete</Danger>
+                  <Btn onClick={enrollNewLeads}>Enroll new leads</Btn>
                 </DetailActions>
               </DetailHeader>
 
               <Cards>
                 <InfoCard>
-                  <InfoLabel>Audience</InfoLabel>
-                  <InfoValue>{audienceLabel(active.audience)}</InfoValue>
-                  <InfoHelp>{audienceHelp(active.audience)}</InfoHelp>
+                  <InfoLabel>Kind</InfoLabel>
+                  <InfoValue>{active.kind}</InfoValue>
+                  <InfoHelp>
+                    {active.kind === "marketing"
+                      ? "Requires SMS subscription + marketing consent."
+                      : "Requires SMS subscription."}
+                  </InfoHelp>
                 </InfoCard>
 
                 <InfoCard>
                   <InfoLabel>Status</InfoLabel>
                   <InfoValue>{prettyStatus(active.status)}</InfoValue>
                   <InfoHelp>
-                    {active.status === "scheduled"
-                      ? `Scheduled for ${formatShort(active.schedule)}`
-                      : active.status === "draft"
-                      ? "Draft — not sending anything yet."
-                      : "Archived — kept for reference."}
+                    {active.started_at ? `Start time: ${formatShort(active.started_at)}` : "Not scheduled yet."}
                   </InfoHelp>
                 </InfoCard>
 
                 <InfoCard>
-                  <InfoLabel>Message</InfoLabel>
-                  <InfoValue style={{ whiteSpace: "pre-wrap" }}>
-                    {active.message || "—"}
-                  </InfoValue>
+                  <InfoLabel>Source</InfoLabel>
+                  <InfoValue>{active.target_table}</InfoValue>
+                  <InfoHelp>Current supported source: quote_form_submissions.</InfoHelp>
                 </InfoCard>
               </Cards>
 
@@ -296,33 +486,27 @@ export default function Sms({ title = "SMS Campaigns" }) {
                   </PreviewMeta>
                 </PreviewTop>
 
-                <PreviewGrid>
-                  <PreviewPhone>
-                    <PhoneTop>
-                      <BubbleTitle>Stone Bridge Buyers</BubbleTitle>
-                      <BubbleSub>Text message preview</BubbleSub>
-                    </PhoneTop>
-
-                    <Bubble>
-                      {renderMerged(active.message || "", sample) || (
-                        <span style={{ opacity: 0.6 }}>Your message preview will appear here.</span>
-                      )}
-                    </Bubble>
-
-                    <Compliance>
-                      <strong>Compliance:</strong> include STOP/HELP language in your actual send
-                      flow, and only message people with explicit consent.
-                    </Compliance>
-                  </PreviewPhone>
-
-                  <SampleCard>
+                {/* Sample recipient FIRST (controls every preview below) */}
+                <div style={{ marginTop: 12 }}>
+                  <SampleCard style={{ background: "rgba(243, 244, 246, 0.55)" }}>
                     <SampleTitle>Sample recipient</SampleTitle>
                     <SampleGrid>
                       <MiniField>
                         <MiniLabel>First name</MiniLabel>
                         <MiniInput
                           value={sample.first_name}
-                          onChange={(e) => setSample((p) => ({ ...p, first_name: e.target.value }))}
+                          onChange={(e) =>
+                            setSample((p) => ({ ...p, first_name: e.target.value }))
+                          }
+                        />
+                      </MiniField>
+                      <MiniField>
+                        <MiniLabel>Last name</MiniLabel>
+                        <MiniInput
+                          value={sample.last_name}
+                          onChange={(e) =>
+                            setSample((p) => ({ ...p, last_name: e.target.value }))
+                          }
                         />
                       </MiniField>
                       <MiniField>
@@ -336,18 +520,73 @@ export default function Sms({ title = "SMS Campaigns" }) {
                         <MiniLabel>State</MiniLabel>
                         <MiniInput
                           value={sample.state}
-                          onChange={(e) => setSample((p) => ({ ...p, state: e.target.value }))}
+                          onChange={(e) =>
+                            setSample((p) => ({ ...p, state: e.target.value }))
+                          }
                         />
                       </MiniField>
-                      <MiniField>
+                      <MiniField style={{ gridColumn: "1 / -1" }}>
                         <MiniLabel>Phone</MiniLabel>
                         <MiniInput
                           value={sample.phone}
-                          onChange={(e) => setSample((p) => ({ ...p, phone: e.target.value }))}
+                          onChange={(e) =>
+                            setSample((p) => ({ ...p, phone: e.target.value }))
+                          }
                         />
                       </MiniField>
                     </SampleGrid>
                   </SampleCard>
+                </div>
+
+                {/* ALL steps preview */}
+                <PreviewGrid style={{ marginTop: 12 }}>
+                  <PreviewPhone style={{ gridColumn: "1 / -1" }}>
+                    <PhoneTop>
+                      <BubbleTitle>Stone Bridge Buyers</BubbleTitle>
+                      <BubbleSub>All steps preview (in order)</BubbleSub>
+                    </PhoneTop>
+
+                    {(!activeSteps || activeSteps.length === 0) ? (
+                      <div style={{ opacity: 0.7, fontWeight: 900 }}>
+                        No steps found for this campaign. Edit the campaign and add at least Step 0.
+                      </div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {activeSteps.map((s) => (
+                          <div key={s.id || s.step_order} style={{ display: "grid", gap: 6 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                              <div style={{ fontWeight: 900, color: "#2f2f32" }}>
+                                Step {s.step_order}
+                              </div>
+                              <div style={{ fontWeight: 900, color: "rgba(47,47,50,0.62)", fontSize: 12 }}>
+                                {(() => {
+                                  const mins = Number(s.offset_minutes || 0);
+                                  const days = Math.floor(mins / (60 * 24));
+                                  const hours = Math.floor((mins - days * 60 * 24) / 60);
+                                  return (
+                                    <>
+                                      Offset: {days}d {hours}h
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+
+                            <Bubble>
+                              {renderMerged(s.body || "", sample) || (
+                                <span style={{ opacity: 0.6 }}>Empty message</span>
+                              )}
+                            </Bubble>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <Compliance>
+                      <strong>Compliance:</strong> in production, include STOP/HELP handling and only message explicit opt-ins.
+                      Opt-outs should immediately stop future steps.
+                    </Compliance>
+                  </PreviewPhone>
                 </PreviewGrid>
               </PreviewBlock>
             </Detail>
@@ -355,13 +594,14 @@ export default function Sms({ title = "SMS Campaigns" }) {
         </Panel>
       </Grid>
 
-      {/* Drawer */}
       {drawerOpen && (
         <DrawerOverlay onMouseDown={closeDrawer}>
           <Drawer onMouseDown={(e) => e.stopPropagation()}>
             <DrawerTop>
-              <DrawerTitle>{draft?.name?.trim() ? "Edit campaign" : "New campaign"}</DrawerTitle>
-              <X onClick={closeDrawer} aria-label="Close">✕</X>
+              <DrawerTitle>{draft?.id ? "Edit campaign" : "New campaign"}</DrawerTitle>
+              <X onClick={closeDrawer} aria-label="Close">
+                ✕
+              </X>
             </DrawerTop>
 
             <DrawerBody>
@@ -374,94 +614,218 @@ export default function Sms({ title = "SMS Campaigns" }) {
                 />
               </Field>
 
+              <Field>
+                <FieldLabel>Description (optional)</FieldLabel>
+                <FieldInput
+                  value={draft?.description ?? ""}
+                  onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
+                  placeholder="Internal notes"
+                />
+              </Field>
+
               <TwoCol>
                 <Field>
-                  <FieldLabel>Type</FieldLabel>
+                  <FieldLabel>Kind</FieldLabel>
                   <Select
-                    value={draft?.type ?? "one_time"}
-                    onChange={(e) => setDraft((p) => ({ ...p, type: e.target.value }))}
+                    value={draft?.kind ?? "transactional"}
+                    onChange={(e) => setDraft((p) => ({ ...p, kind: e.target.value }))}
                   >
-                    <option value="one_time">One-time broadcast</option>
-                    <option value="drip">Drip sequence (placeholder)</option>
+                    {KINDS.map((k) => (
+                      <option key={k.key} value={k.key}>
+                        {k.label}
+                      </option>
+                    ))}
                   </Select>
                   <FieldHelp>
-                    Drip is UI-only right now; later you can define steps + delays.
+                    {draft?.kind === "marketing"
+                      ? "Only recipients with SMS subscription + marketing consent will be enrolled."
+                      : "Only recipients with SMS subscription will be enrolled."}
                   </FieldHelp>
                 </Field>
 
                 <Field>
-                  <FieldLabel>Audience</FieldLabel>
+                  <FieldLabel>Source</FieldLabel>
                   <Select
-                    value={draft?.audience ?? "quote_form_sms_opt_in"}
-                    onChange={(e) => setDraft((p) => ({ ...p, audience: e.target.value }))}
+                    value={draft?.target_table ?? "quote_form_submissions"}
+                    onChange={(e) => setDraft((p) => ({ ...p, target_table: e.target.value }))}
                   >
                     {AUDIENCES.map((a) => (
-                      <option key={a.key} value={a.key}>
+                      <option key={a.key} value={a.target_table}>
                         {a.label}
                       </option>
                     ))}
                   </Select>
-                  <FieldHelp>{audienceHelp(draft?.audience)}</FieldHelp>
+                  <FieldHelp>{AUDIENCES.find((a) => a.target_table === draft?.target_table)?.help || ""}</FieldHelp>
                 </Field>
               </TwoCol>
 
+              <Field>
+                <FieldLabel>Start time (when Step 0 begins)</FieldLabel>
+                <FieldInput
+                  type="datetime-local"
+                  value={draft?.schedule_local ?? ""}
+                  onChange={(e) => setDraft((p) => ({ ...p, schedule_local: e.target.value }))}
+                />
+                <FieldHelp>
+                  Leave blank to start immediately on activation. Messages schedule from enrollment/start + offsets.
+                </FieldHelp>
+              </Field>
+
               <Composer>
                 <ComposerTop>
-                  <FieldLabel>Message</FieldLabel>
-                  <Counter>
-                    {smsInfo(draft?.message || "").chars} chars •{" "}
-                    {smsInfo(draft?.message || "").segments} segment
-                    {smsInfo(draft?.message || "").segments === 1 ? "" : "s"}
-                  </Counter>
+                  <FieldLabel>Steps (drip sequence)</FieldLabel>
+                  <RightInline>
+                    <SmallBtn type="button" onClick={addStep}>
+                      + Add step
+                    </SmallBtn>
+                  </RightInline>
                 </ComposerTop>
 
-                <TextArea
-                  value={draft?.message ?? ""}
-                  onChange={(e) => setDraft((p) => ({ ...p, message: e.target.value }))}
-                  placeholder="Write your SMS… (use merge fields like {{first_name}})"
-                />
+                {(draft?.steps || []).map((s, idx) => (
+                  <StepCard key={s.id || `new_${idx}`}>
+                    <StepTop>
+                      <StepTitle>Step {idx}</StepTitle>
+                      <StepActions>
+                        <MiniIconBtn type="button" onClick={() => moveStep(idx, -1)} disabled={idx === 0} title="Move up">
+                          ↑
+                        </MiniIconBtn>
+                        <MiniIconBtn type="button" onClick={() => moveStep(idx, 1)} disabled={idx === (draft.steps.length - 1)} title="Move down">
+                          ↓
+                        </MiniIconBtn>
+                        <MiniDangerBtn type="button" onClick={() => removeStep(idx)} title="Remove step">
+                          Remove
+                        </MiniDangerBtn>
+                      </StepActions>
+                    </StepTop>
 
-                <MergeRow>
-                  <MergeLabel>Insert merge field:</MergeLabel>
-                  <MergeBtns>
-                    {MERGE_FIELDS.map((f) => (
-                      <MiniBtn
-                        key={f.key}
-                        type="button"
-                        onClick={() => {
-                          const token = `{{${f.key}}}`;
-                          setDraft((p) => ({ ...p, message: (p?.message || "") + token }));
-                        }}
-                      >
-                        {f.label}
-                      </MiniBtn>
-                    ))}
-                  </MergeBtns>
-                </MergeRow>
+                    <StepGrid>
+                      <MiniField>
+                        <MiniLabel>Offset</MiniLabel>
 
-                <MiniPreview>
-                  <MiniPreviewTitle>Preview</MiniPreviewTitle>
-                  <MiniBubble>
-                    {renderMerged(draft?.message || "", sample) || (
-                      <span style={{ opacity: 0.6 }}>
-                        Start typing to preview your message.
-                      </span>
-                    )}
-                  </MiniBubble>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          <div>
+                            <MiniLabel style={{ marginBottom: 6 }}>Days</MiniLabel>
+                            <MiniInput
+                              type="number"
+                              min="0"
+                              value={s.offset_days ?? 0}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setDraft((p) => {
+                                  const next = [...(p.steps || [])];
+                                  next[idx] = { ...next[idx], offset_days: v === "" ? 0 : Number(v) };
+                                  return { ...p, steps: next };
+                                });
+                              }}
+                            />
+                          </div>
 
-                  <Warn>
-                    <strong>Reminder:</strong> only message people who explicitly opted in. Your
-                    actual sending flow should include STOP/HELP instructions.
-                  </Warn>
-                </MiniPreview>
+                          <div>
+                            <MiniLabel style={{ marginBottom: 6 }}>Hours</MiniLabel>
+                            <MiniInput
+                              type="number"
+                              min="0"
+                              value={s.offset_hours ?? 0}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setDraft((p) => {
+                                  const next = [...(p.steps || [])];
+                                  next[idx] = { ...next[idx], offset_hours: v === "" ? 0 : Number(v) };
+                                  return { ...p, steps: next };
+                                });
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <MiniHint>0d 0h = immediately at start/enroll</MiniHint>
+                      </MiniField>
+
+                      <MiniField style={{ gridColumn: "1 / -1" }}>
+                        <MiniLabel>Message</MiniLabel>
+                        <TextArea
+                          value={s.body ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setDraft((p) => {
+                              const next = [...(p.steps || [])];
+                              next[idx] = { ...next[idx], body: v };
+                              return { ...p, steps: next };
+                            });
+                          }}
+                          placeholder={`Write SMS for step ${idx}… (use merge fields like {{first_name}})`}
+                        />
+                        <Counter>
+                          {smsInfo(s.body || "").chars} chars • {smsInfo(s.body || "").segments} segment
+                          {smsInfo(s.body || "").segments === 1 ? "" : "s"}
+                        </Counter>
+                      </MiniField>
+
+                      <MergeRow>
+                        <MergeLabel>Insert merge field:</MergeLabel>
+                        <MergeBtns>
+                          {MERGE_FIELDS.map((f) => (
+                            <MiniBtn
+                              key={f.key}
+                              type="button"
+                              onClick={() => {
+                                const token = `{{${f.key}}}`;
+                                setDraft((p) => {
+                                  const next = [...(p.steps || [])];
+                                  next[idx] = { ...next[idx], body: (next[idx].body || "") + token };
+                                  return { ...p, steps: next };
+                                });
+                              }}
+                            >
+                              {f.label}
+                            </MiniBtn>
+                          ))}
+                        </MergeBtns>
+                      </MergeRow>
+
+                      <MiniPreview>
+                        <MiniPreviewTitle>Preview</MiniPreviewTitle>
+                        <MiniBubble>
+                          {renderMerged(s.body || "", sample) || (
+                            <span style={{ opacity: 0.6 }}>Start typing to preview your message.</span>
+                          )}
+                        </MiniBubble>
+
+                        <Warn>
+                          <strong>Reminder:</strong> consent is enforced (SMS subscription required; marketing requires marketing consent).
+                        </Warn>
+                      </MiniPreview>
+                    </StepGrid>
+                  </StepCard>
+                ))}
               </Composer>
             </DrawerBody>
 
             <DrawerBottom>
               <Ghost onClick={closeDrawer}>Cancel</Ghost>
-              <Btn onClick={saveDraft}>Save draft</Btn>
-              <Primary onClick={scheduleCampaign} disabled={!draft?.message?.trim()}>
-                Schedule
+              <Btn
+                onClick={async () => {
+                  try {
+                    await saveCampaign({ keepDrawerOpen: false });
+                  } catch (e) {
+                    alert(String(e?.message || e));
+                  }
+                }}
+              >
+                Save draft
+              </Btn>
+              <Primary
+                onClick={async () => {
+                  try {
+                    await activateCampaign();
+                  } catch (e) {
+                    alert(String(e?.message || e));
+                  }
+                }}
+                disabled={!draft?.steps?.[0]?.body?.trim()}
+                title="Activate + enqueue outbox"
+              >
+                Activate
               </Primary>
             </DrawerBottom>
           </Drawer>
@@ -473,18 +837,14 @@ export default function Sms({ title = "SMS Campaigns" }) {
 
 /* helpers */
 
-function audienceLabel(key) {
-  return AUDIENCES.find((a) => a.key === key)?.label || "Unknown audience";
-}
-function audienceHelp(key) {
-  return AUDIENCES.find((a) => a.key === key)?.help || " ";
-}
 function prettyStatus(s) {
   if (s === "draft") return "Draft";
-  if (s === "scheduled") return "Scheduled";
+  if (s === "active") return "Active";
+  if (s === "paused") return "Paused";
   if (s === "archived") return "Archived";
   return s || "—";
 }
+
 function formatShort(iso) {
   if (!iso) return "—";
   try {
@@ -494,6 +854,7 @@ function formatShort(iso) {
     return iso;
   }
 }
+
 function timeAgo(iso) {
   if (!iso) return "—";
   const t = new Date(iso).getTime();
@@ -506,6 +867,7 @@ function timeAgo(iso) {
   const days = Math.floor(h / 24);
   return `Updated ${days}d ago`;
 }
+
 function renderMerged(text, sample) {
   if (!text) return "";
   return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => {
@@ -513,6 +875,7 @@ function renderMerged(text, sample) {
     return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : `{{${key}}}`;
   });
 }
+
 function smsInfo(text) {
   const chars = (text || "").length;
   const isUnicode = /[^\u0000-\u007F]/.test(text || "");
@@ -644,14 +1007,14 @@ const Pill = styled.div`
   border-radius: 999px;
 
   background: ${(p) =>
-    p.$tone === "scheduled"
+    p.$tone === "active"
       ? "rgba(34, 197, 94, 0.14)"
       : p.$tone === "archived"
       ? "rgba(107, 114, 128, 0.12)"
       : "rgba(125, 168, 193, 0.16)"};
 
   color: ${(p) =>
-    p.$tone === "scheduled"
+    p.$tone === "active"
       ? "rgba(20, 83, 45, 0.92)"
       : p.$tone === "archived"
       ? "rgba(55, 65, 81, 0.92)"
@@ -868,6 +1231,13 @@ const MiniLabel = styled.div`
   margin-bottom: 6px;
 `;
 
+const MiniHint = styled.div`
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 900;
+  color: rgba(47, 47, 50, 0.55);
+`;
+
 const MiniInput = styled.input`
   width: 100%;
   padding: 10px 12px;
@@ -933,28 +1303,6 @@ const Ghost = styled.button`
   background: rgba(255, 255, 255, 0.92);
 `;
 
-const Danger = styled.button`
-  border: 0;
-  cursor: pointer;
-  padding: 12px 14px;
-  border-radius: 18px;
-  font-weight: 900;
-  background: rgba(239, 68, 68, 0.12);
-  color: rgba(127, 29, 29, 0.92);
-`;
-
-const DangerGhost = styled.button`
-  border: 1px solid rgba(239, 68, 68, 0.20);
-  cursor: pointer;
-  padding: 12px 14px;
-  border-radius: 18px;
-  font-weight: 900;
-  background: rgba(255, 255, 255, 0.92);
-  color: rgba(127, 29, 29, 0.92);
-`;
-
-/* Drawer */
-
 const DrawerOverlay = styled.div`
   position: fixed;
   inset: 0;
@@ -965,7 +1313,7 @@ const DrawerOverlay = styled.div`
 `;
 
 const Drawer = styled.div`
-  width: min(720px, 100%);
+  width: min(840px, 100%);
   height: 100%;
   background: #ffffff;
   border-left: 1px solid rgba(47, 47, 50, 0.10);
@@ -1083,10 +1431,86 @@ const ComposerTop = styled.div`
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  align-items: baseline;
+  align-items: center;
+`;
+
+const RightInline = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: center;
+`;
+
+const SmallBtn = styled.button`
+  border: 1px solid rgba(47, 47, 50, 0.14);
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #2f2f32;
+`;
+
+const StepCard = styled.div`
+  margin-top: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(47, 47, 50, 0.10);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 12px;
+`;
+
+const StepTop = styled.div`
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+`;
+
+const StepTitle = styled.div`
+  font-weight: 900;
+  color: #2f2f32;
+`;
+
+const StepActions = styled.div`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+`;
+
+const MiniIconBtn = styled.button`
+  border: 1px solid rgba(47, 47, 50, 0.14);
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-weight: 900;
+  background: rgba(255, 255, 255, 0.92);
+  color: #2f2f32;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+`;
+
+const MiniDangerBtn = styled.button`
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-weight: 900;
+  background: rgba(239, 68, 68, 0.10);
+  color: rgba(127, 29, 29, 0.92);
+`;
+
+const StepGrid = styled.div`
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
 `;
 
 const Counter = styled.div`
+  margin-top: 8px;
   font-weight: 900;
   font-size: 11px;
   color: rgba(47, 47, 50, 0.62);

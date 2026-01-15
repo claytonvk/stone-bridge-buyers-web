@@ -20,6 +20,10 @@ export default function AdminLayout() {
           <NavItem to="/admin/sms">
             SMS Campaigns
           </NavItem>
+
+          <NavItem to="/admin/leads">
+            Leads
+          </NavItem>
         </Nav>
       </Sidebar>
 
@@ -39,6 +43,8 @@ const Wrap = styled.div`
 
 const Sidebar = styled.aside`
   width: 220px;
+  flex-shrink: 0;
+
   background: #f3f4f6;
   border-right: 1px solid rgba(47, 47, 50, 0.12);
   padding: 18px 14px;
@@ -77,4 +83,5 @@ const NavItem = styled(NavLink)`
 const Main = styled.main`
   flex: 1;
   padding: 22px;
+  max-width: calc(100vw - 220px);
 `;

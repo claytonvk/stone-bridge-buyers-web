@@ -1,17 +1,16 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import styled from "styled-components";
-import { ShieldCheck, FileText, Cookie, Info } from "lucide-react";
-
-/**
- * One "Legal" page with tabs.
- * Add more sections by pushing to the `SECTIONS` array.
- */
+import { ShieldCheck, FileText, MessageSquare } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
 
 export default function Legal({
   brandName = "Stone Bridge Buyers",
   supportEmail = "cartern@stonebridgebuyers.com",
   updatedLabel = "Last updated: January 2026",
 }) {
+  const navigate = useNavigate();
+  const params = useParams();
+
   const SECTIONS = useMemo(
     () => [
       {
@@ -26,26 +25,21 @@ export default function Legal({
         Icon: FileText,
         content: <TermsContent brandName={brandName} supportEmail={supportEmail} />,
       },
-      // Optional starter section (keep or delete)
-      // {
-      //   key: "cookies",
-      //   label: "Cookies",
-      //   Icon: Cookie,
-      //   content: <CookiesContent brandName={brandName} />,
-      // },
-      // Optional starter section (keep or delete)
-      // {
-      //   key: "disclosures",
-      //   label: "Disclosures",
-      //   Icon: Info,
-      //   content: <DisclosuresContent brandName={brandName} />,
-      // },
+      {
+        key: "sms",
+        label: "SMS",
+        Icon: MessageSquare,
+        content: <SmsContent brandName={brandName} supportEmail={supportEmail} />,
+      },
     ],
     [brandName, supportEmail]
   );
 
-  const [active, setActive] = useState("privacy");
-  const activeSection = SECTIONS.find((s) => s.key === active) || SECTIONS[0];
+  const routeKey = (params?.section || "privacy").toLowerCase();
+  const activeSection = SECTIONS.find((s) => s.key === routeKey) || SECTIONS[0];
+  const active = activeSection.key;
+
+  const go = (key) => navigate(`/legal/${key}`);
 
   return (
     <Page>
@@ -54,7 +48,8 @@ export default function Legal({
           <Title>Legal</Title>
           <Updated>{updatedLabel}</Updated>
           <Lead>
-            View our policies and terms. We are committed to transparency and open communication. If you have any questions, please contact us.
+            View our policies and terms. We are committed to transparency and open communication. If
+            you have any questions, please contact us.
           </Lead>
         </Header>
 
@@ -70,7 +65,7 @@ export default function Legal({
                 aria-controls={`panel-${key}`}
                 id={`tab-${key}`}
                 $active={isActive}
-                onClick={() => setActive(key)}
+                onClick={() => go(key)}
               >
                 <TabIcon aria-hidden="true">
                   <Icon />
@@ -81,11 +76,7 @@ export default function Legal({
           })}
         </TabsRow>
 
-        <Card
-          role="tabpanel"
-          id={`panel-${activeSection.key}`}
-          aria-labelledby={`tab-${activeSection.key}`}
-        >
+        <Card role="tabpanel" id={`panel-${active}`} aria-labelledby={`tab-${active}`}>
           {activeSection.content}
         </Card>
       </Shell>
@@ -105,9 +96,8 @@ function PrivacyContent({ brandName, supportEmail }) {
 
       <Block>
         <P>
-          {brandName} respects your privacy. This Privacy Policy explains how we collect, use,
-          and protect information when you visit our website or submit information through our
-          forms.
+          {brandName} respects your privacy. This Privacy Policy explains how we collect, use, and
+          protect information when you visit our website or submit information through our forms.
         </P>
       </Block>
 
@@ -117,6 +107,7 @@ function PrivacyContent({ brandName, supportEmail }) {
         <Ul>
           <Li>Your name, email address, and phone number</Li>
           <Li>Property address and basic property details</Li>
+          <Li>Any message or notes you submit through our forms</Li>
         </Ul>
       </Block>
 
@@ -125,24 +116,41 @@ function PrivacyContent({ brandName, supportEmail }) {
         <P>We use your information to:</P>
         <Ul>
           <Li>Evaluate your property and provide a potential offer</Li>
-          <Li>Contact you regarding your inquiry</Li>
+          <Li>Contact you regarding your inquiry (including by phone or text if you opt in)</Li>
           <Li>Improve our website and services</Li>
           <Li>Comply with legal or regulatory requirements</Li>
         </Ul>
       </Block>
 
       <Block>
+        <H3>SMS / text messaging</H3>
+        <P>
+          If you opt in to receive text messages, we may send transactional and service-related
+          messages (for example: updates on your request, scheduling, and offer communications). If
+          you separately opt in to marketing, we may also send promotional or marketing messages.
+          Message frequency varies. Message &amp; data rates may apply. Reply <strong>STOP</strong>{" "}
+          to cancel and <strong>HELP</strong> for help.
+        </P>
+        <P>
+          We do not sell or share your mobile number for third-party marketing. We may share your
+          information with service providers who help us operate our communications (for example,
+          messaging platforms) only as needed to provide the service.
+        </P>
+      </Block>
+
+      <Block>
         <H3>Information sharing</H3>
         <P>
-          We do not sell your personal information. We may share information with trusted
-          service providers only as needed to operate our business or communicate with you.
+          We do not sell your personal information. We may share information with trusted service
+          providers only as needed to operate our business or communicate with you.
         </P>
       </Block>
 
       <Block>
         <H3>Security</H3>
         <P>
-          We take very strong measures to protect your information. We use industry-standard security practices to safeguard data and limit access to authorized personnel only.
+          We take strong measures to protect your information. We use industry-standard security
+          practices to safeguard data and limit access to authorized personnel only.
         </P>
       </Block>
 
@@ -168,13 +176,13 @@ function TermsContent({ brandName, supportEmail }) {
   return (
     <>
       <SectionHeader>
-        <H2>Terms & Conditions</H2>
+        <H2>Terms &amp; Conditions</H2>
         <SubTitle>Rules for using this website and submitting information.</SubTitle>
       </SectionHeader>
 
       <Block>
         <P>
-          By accessing or using this website, you agree to these Terms & Conditions. If you do
+          By accessing or using this website, you agree to these Terms &amp; Conditions. If you do
           not agree, please do not use the site.
         </P>
       </Block>
@@ -204,26 +212,26 @@ function TermsContent({ brandName, supportEmail }) {
       </Block>
 
       <Block>
-        <H3>Limitation of liability</H3>
+        <H3>Third-party services</H3>
         <P>
-          {brandName} is not liable for damages arising from your use of this website or
-          reliance on its content.
+          This site may use third-party services (such as form handling, analytics, or messaging
+          providers). We are not responsible for their content or practices.
         </P>
       </Block>
 
       <Block>
-        <H3>Third-party services</H3>
+        <H3>Limitation of liability</H3>
         <P>
-          This site may use third-party services (such as form handling or analytics). We are
-          not responsible for their content or practices.
+          {brandName} is not liable for damages arising from your use of this website or reliance
+          on its content.
         </P>
       </Block>
 
       <Block>
         <H3>Governing law</H3>
         <P>
-          These Terms are governed by the laws of the United States and the State of Texas,
-          without regard to conflict of law principles.
+          These Terms are governed by the laws of the United States and the State of Texas, without
+          regard to conflict of law principles.
         </P>
       </Block>
 
@@ -237,30 +245,78 @@ function TermsContent({ brandName, supportEmail }) {
   );
 }
 
-/** Optional starter: keep/delete */
-// function CookiesContent({ brandName }) {
-//   return (
-//     <>
-//       <SectionHeader>
-//         <H2>Cookies</H2>
-//         <SubTitle>Short, plain-language summary.</SubTitle>
-//       </SectionHeader>
+function SmsContent({ brandName, supportEmail }) {
+  return (
+    <>
+      <SectionHeader>
+        <H2>SMS Messaging Terms</H2>
+        <SubTitle>Opt-in, message types, frequency, and opt-out instructions.</SubTitle>
+      </SectionHeader>
 
-//       <Block>
-//         <P>
-//           {brandName} may use cookies and similar technologies to keep the site working
-//           smoothly and to understand how visitors interact with pages.
-//         </P>
-//         <P>
-//           You can control cookies through your browser settings. Disabling cookies may affect
-//           certain site features.
-//         </P>
-//       </Block>
-//     </>
-//   );
-// }
+      <Block>
+        <H3>Program description</H3>
+        <P>
+          If you opt in to receive SMS messages from {brandName}, we may send texts related to your
+          inquiry, including: request confirmations, scheduling, offer updates, and follow-ups. If
+          you separately opt in to marketing, we may send promotional messages.
+        </P>
+      </Block>
 
-/* ---------------- styles (matches your vibe) ---------------- */
+      <Block>
+        <H3>Opt-in</H3>
+        <P>
+          You opt in by submitting your phone number and checking the SMS consent box on our
+          website forms. Consent to receive texts is not a condition of purchase or service.
+        </P>
+      </Block>
+
+      <Block>
+        <H3>Message frequency</H3>
+        <P>Message frequency varies based on your activity and requests.</P>
+      </Block>
+
+      <Block>
+        <H3>Rates</H3>
+        <P>Message &amp; data rates may apply.</P>
+      </Block>
+
+      <Block>
+        <H3>Opt-out and help</H3>
+        <P>
+          Reply <strong>STOP</strong> at any time to cancel. Reply <strong>HELP</strong> for help.
+          You may also contact us at <strong>{supportEmail}</strong>.
+        </P>
+      </Block>
+
+      <Block>
+        <H3>Data use / sharing</H3>
+        <P>
+          We do not sell or share your mobile number or SMS consent information to third parties
+          for their marketing purposes. We may share information with service providers who help
+          deliver our communications (for example, messaging platforms), only as necessary to
+          provide the service.
+        </P>
+      </Block>
+
+      <Block>
+        <H3>Supported carriers</H3>
+        <P>
+          Carriers are not liable for delayed or undelivered messages. Delivery may be affected by
+          your mobile carrier and device.
+        </P>
+      </Block>
+
+      <ContactBox>
+        <ContactTitle>Questions?</ContactTitle>
+        <ContactText>
+          Email us at <strong>{supportEmail}</strong>
+        </ContactText>
+      </ContactBox>
+    </>
+  );
+}
+
+/* ---------------- styles (unchanged vibe) ---------------- */
 
 const Page = styled.main`
   min-height: 100vh;
@@ -303,7 +359,7 @@ const Lead = styled.p`
 
 const TabsRow = styled.div`
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 14px;
 

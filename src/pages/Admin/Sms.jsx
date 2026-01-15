@@ -481,9 +481,6 @@ export default function Sms({ title = "SMS Campaigns" }) {
               <PreviewBlock>
                 <PreviewTop>
                   <PreviewTitle>Preview</PreviewTitle>
-                  <PreviewMeta>
-                    Use merge fields like <code>{"{{first_name}}"}</code>
-                  </PreviewMeta>
                 </PreviewTop>
 
                 {/* Sample recipient FIRST (controls every preview below) */}
@@ -1131,19 +1128,6 @@ const PreviewTop = styled.div`
 const PreviewTitle = styled.div`
   font-weight: 900;
   color: #2f2f32;
-`;
-
-const PreviewMeta = styled.div`
-  font-weight: 900;
-  font-size: 11px;
-  color: rgba(47, 47, 50, 0.62);
-
-  code {
-    font-weight: 900;
-    padding: 2px 6px;
-    border-radius: 10px;
-    background: rgba(47, 47, 50, 0.06);
-  }
 `;
 
 const PreviewGrid = styled.div`

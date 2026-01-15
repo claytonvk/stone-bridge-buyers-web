@@ -27,6 +27,8 @@ const AUDIENCES = [
   },
 ];
 
+const COMPLIANCE_FOOTER = "\n\nReply STOP to unsubscribe or HELP for help.";
+
 const DEFAULT_SAMPLE = {
   first_name: "Joe",
   last_name: "Smith",
@@ -257,12 +259,18 @@ export default function Sms({ title = "SMS Campaigns" }) {
 
     // Upsert steps
     for (const s of steps) {
+      // Automatically append compliance footer if not already present
+      let body = s.body || "";
+      if (body && !body.includes("STOP to unsubscribe")) {
+        body = body + COMPLIANCE_FOOTER;
+      }
+      
       const payload = {
         ...(s.id ? { id: s.id } : {}),
         campaign_id: campaignId,
         step_order: s.step_order,
         offset_minutes: s.offset_minutes,
-        body: s.body || "",
+        body: body,
         requires_marketing_consent: kind === "marketing",
       };
 
@@ -580,8 +588,8 @@ export default function Sms({ title = "SMS Campaigns" }) {
                     )}
 
                     <Compliance>
-                      <strong>Compliance:</strong> in production, include STOP/HELP handling and only message explicit opt-ins.
-                      Opt-outs should immediately stop future steps.
+                      <strong>Compliance:</strong> Only leads with explicit SMS consent are enrolled (marketing campaigns also require marketing consent). 
+                      Opt-outs immediately stop future messages.
                     </Compliance>
                   </PreviewPhone>
                 </PreviewGrid>
@@ -753,8 +761,8 @@ export default function Sms({ title = "SMS Campaigns" }) {
                           placeholder={`Write SMS for step ${idx + 1}… (use merge fields like {{first_name}})`}
                         />
                         <Counter>
-                          {smsInfo(s.body || "").chars} chars • {smsInfo(s.body || "").segments} segment
-                          {smsInfo(s.body || "").segments === 1 ? "" : "s"}
+                          {smsInfo((s.body || "") + COMPLIANCE_FOOTER).chars} chars • {smsInfo((s.body || "") + COMPLIANCE_FOOTER).segments} segment
+                          {smsInfo((s.body || "") + COMPLIANCE_FOOTER).segments === 1 ? "" : "s"}
                         </Counter>
                       </MiniField>
 
@@ -865,12 +873,19 @@ function timeAgo(iso) {
   return `Updated ${days}d ago`;
 }
 
-function renderMerged(text, sample) {
+function renderMerged(text, sample, includeCompliance = true) {
   if (!text) return "";
-  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => {
+  
+  let merged = text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => {
     const v = sample?.[key];
     return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : `{{${key}}}`;
   });
+  
+  if (includeCompliance) {
+    merged += COMPLIANCE_FOOTER;
+  }
+  
+  return merged;
 }
 
 function smsInfo(text) {
@@ -1100,6 +1115,7 @@ const InfoValue = styled.div`
   font-weight: 900;
   color: #2f2f32;
   font-size: 13px;
+  text-transform: capitalize;
 `;
 
 const InfoHelp = styled.div`
@@ -1386,6 +1402,7 @@ const Select = styled.select`
   background: rgba(255, 255, 255, 0.96);
   font-weight: 900;
   color: #2f2f32;
+  text-transform: capitalize;
 
   &:focus {
     outline: none;

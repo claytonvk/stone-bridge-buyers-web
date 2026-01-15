@@ -556,7 +556,7 @@ export default function Sms({ title = "SMS Campaigns" }) {
                           <div key={s.id || s.step_order} style={{ display: "grid", gap: 6 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                               <div style={{ fontWeight: 900, color: "#2f2f32" }}>
-                                Step {s.step_order}
+                                Step {s.step_order + 1}
                               </div>
                               <div style={{ fontWeight: 900, color: "rgba(47,47,50,0.62)", fontSize: 12 }}>
                                 {(() => {
@@ -684,7 +684,7 @@ export default function Sms({ title = "SMS Campaigns" }) {
                 {(draft?.steps || []).map((s, idx) => (
                   <StepCard key={s.id || `new_${idx}`}>
                     <StepTop>
-                      <StepTitle>Step {idx}</StepTitle>
+                      <StepTitle>Step {idx + 1}</StepTitle>
                       <StepActions>
                         <MiniIconBtn type="button" onClick={() => moveStep(idx, -1)} disabled={idx === 0} title="Move up">
                           ↑
@@ -753,7 +753,7 @@ export default function Sms({ title = "SMS Campaigns" }) {
                               return { ...p, steps: next };
                             });
                           }}
-                          placeholder={`Write SMS for step ${idx}… (use merge fields like {{first_name}})`}
+                          placeholder={`Write SMS for step ${idx + 1}… (use merge fields like {{first_name}})`}
                         />
                         <Counter>
                           {smsInfo(s.body || "").chars} chars • {smsInfo(s.body || "").segments} segment

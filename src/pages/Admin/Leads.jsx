@@ -14,7 +14,7 @@ export default function Leads() {
     // this will show duplicate leads (one per campaign).
     // We can aggregate later if you want.
     let query = supabase
-      .from("v_leads")
+      .from("leads")
       .select(
         `
         lead_id,
@@ -139,7 +139,7 @@ export default function Leads() {
                       <Pill $tone={r.sms_subscription ? "good" : "bad"}>
                         SMS: {r.sms_subscription ? "Yes" : "No"}
                       </Pill>
-                      <Pill $tone={r.consent_marketing ? "good" : "warn"}>
+                      <Pill $tone={r.consent_marketing ? "good" : "bad"}>
                         Mktg: {r.consent_marketing ? "Yes" : "No"}
                       </Pill>
                     </Td>

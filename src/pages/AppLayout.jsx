@@ -1,3 +1,4 @@
+// src/pages/AppLayout.jsx
 import React from "react";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import Home from "./Home.jsx";
@@ -18,7 +19,11 @@ import AdminDashboard from "./Admin/Dashboard.jsx";
 import AdminForms from "./Admin/Forms.jsx";
 import { AdminHeader } from "../components/AdminHeader.jsx";
 import Sms from "./Admin/Sms.jsx";
-import Leads from "./Admin/Leads.jsx";
+
+// Leads pages
+import LeadsIndex from "./Admin/Leads/LeadsIndex.jsx";
+import LeadsStatus from "./Admin/Leads/LeadsStatus.jsx";
+import LeadDetail from "./Admin/Leads/LeadDetail.jsx";
 
 export default function AppLayout() {
   const { pathname } = useLocation();
@@ -50,10 +55,7 @@ export default function AppLayout() {
 
         <Routes>
           {/* Root: main domain shows marketing site, pro domain goes to admin dashboard */}
-          <Route
-            path="/"
-            element={isPro ? <Navigate to="/admin" replace /> : <Home />}
-          />
+          <Route path="/" element={isPro ? <Navigate to="/admin" replace /> : <Home />} />
 
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
@@ -76,7 +78,16 @@ export default function AppLayout() {
             <Route path="sms" element={<Sms />} />
             <Route index element={<AdminDashboard />} />
             <Route path="forms" element={<AdminForms />} />
-            <Route path="leads" element={<Leads />} />
+
+            {/* Leads routes */}
+            <Route path="leads" element={<LeadsIndex />} />
+            <Route path="leads/:id" element={<LeadDetail />} />
+            <Route path="leads/status/:status" element={<LeadsStatus />} />
+            <Route path="leads/new" element={<Navigate to="/admin/leads/status/new" replace />} />
+            <Route path="leads/contacted" element={<Navigate to="/admin/leads/status/contacted" replace />} />
+            <Route path="leads/followUp" element={<Navigate to="/admin/leads/status/followUp" replace />} />
+            <Route path="leads/interested" element={<Navigate to="/admin/leads/status/interested" replace />} />
+            <Route path="leads/do-not-contact" element={<Navigate to="/admin/leads/status/do_not_contact" replace />} />
 
             {/* Any /admin/* unknown routes go back to dashboard */}
             <Route path="*" element={<Navigate to="/admin" replace />} />

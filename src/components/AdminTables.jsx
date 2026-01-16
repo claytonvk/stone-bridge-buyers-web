@@ -1383,7 +1383,7 @@ const TableWrap = styled.div`
 `;
 
 const Table = styled.table`
-  width: max-content;
+  width: 100%;
   border-collapse: collapse;
   background: rgba(0, 0, 0, 0.04);
   color: #2f2f32;

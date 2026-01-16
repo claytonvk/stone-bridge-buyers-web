@@ -65,7 +65,6 @@ export default function Location({
 }) {
 
   const { state } = useParams();
-  console.log(useParams())
   const stateSlug = safeSlug(state || "texas");
   const stateName = titleCaseFromSlug(stateSlug);
 

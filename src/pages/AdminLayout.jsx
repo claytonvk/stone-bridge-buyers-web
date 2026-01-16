@@ -18,7 +18,7 @@ export default function AdminLayout() {
           </NavItem>
 
           <NavItem to="/admin/sms">
-            SMS Campaigns
+            SMS Flows
           </NavItem>
 
           <NavItem to="/admin/leads">

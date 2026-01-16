@@ -1,16 +1,20 @@
 // src/pages/Admin/Leads/LeadsIndex.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import { Link, useNavigate } from "react-router-dom";
 import Papa from "papaparse";
 import { supabase } from "../../../lib/supabaseClient.js";
 import EditLeadModal from "./EditLeadModal.jsx";
 import NewLeadModal from "./NewLeadModal.jsx";
+import { transformDealMachineRowToLead } from "../../../lib/dealmachineImport.js";
+import ImportDealMachineModal from "./ImportDealMachineModel.jsx";
 
 const STATUSES = ["new", "contacted", "followUp", "interested", "do_not_contact"];
 
 export default function LeadsIndex() {
   const navigate = useNavigate();
+
+  const fileInputRef = useRef(null);
 
   const [rows, setRows] = useState([]);
   const [counts, setCounts] = useState({});
@@ -18,8 +22,87 @@ export default function LeadsIndex() {
   const [q, setQ] = useState("");
 
   const [showNew, setShowNew] = useState(false);
-  const [showImport, setShowImport] = useState(false);
+  // const [showImport, setShowImport] = useState(false);
   const [editLead, setEditLead] = useState(null);
+
+  const [importPreview, setImportPreview] = useState(null);
+
+  async function handleDealMachineCsvFile(file) {
+    if (!file) return;
+
+    setLoading(true);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => String(h ?? "").trim(), // keep headers stable
+      complete: (results) => {
+        try {
+          const rows = (results.data || []).filter((r) => r && Object.keys(r).length);
+
+          const valid = [];
+          const skipped = [];
+
+          rows.forEach((row, i) => {
+            const { lead, skipReasons } = transformDealMachineRowToLead(row);
+            if (skipReasons.length) {
+              skipped.push({ row, rowIndex: i + 2, reasons: skipReasons }); // +2 because header row + 1-based
+            } else {
+              valid.push({ lead, rowIndex: i + 2 });
+            }
+          });
+
+          setImportPreview({
+            fileName: file.name,
+            valid,
+            skipped,
+            allCount: rows.length,
+          });
+        } catch (e) {
+          console.error(e);
+          alert("Failed to parse/transform CSV.");
+        } finally {
+          setLoading(false);
+        }
+      },
+      error: (err) => {
+        console.error(err);
+        setLoading(false);
+        alert("PapaParse error parsing CSV.");
+      },
+    });
+  }
+
+  async function insertLeadsBulk(leads) {
+    // leads: IncomingLead[] matching your Edge Function type
+    const chunkSize = 500;
+
+    let inserted = 0;
+    let updated = 0;
+    let skipped_invalid = 0;
+    const invalid = [];
+
+    for (let i = 0; i < leads.length; i += chunkSize) {
+      const chunk = leads.slice(i, i + chunkSize);
+
+      const { data, error } = await supabase.functions.invoke("upsert-leads", {
+        body: { leads: chunk },
+        // If you enabled ADMIN_SECRET in the Edge Function secrets,
+        // you must send it here.
+        // headers: { "x-admin-secret": import.meta.env.VITE_ADMIN_SECRET },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      inserted += data.inserted || 0;
+      updated += data.updated || 0;
+      skipped_invalid += data.skipped_invalid || 0;
+      if (Array.isArray(data.invalid)) invalid.push(...data.invalid);
+    }
+
+    return { inserted, updated, skipped_invalid, invalid };
+  }
 
   async function load() {
     setLoading(true);
@@ -135,7 +218,18 @@ export default function LeadsIndex() {
 
         <Right>
           <Search value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone, email, address…" />
-          <Btn onClick={() => setShowImport(true)}>Import CSV</Btn>
+          {/* <Btn onClick={() => setShowImport(true)}>Import CSV</Btn> */}
+          <Btn onClick={() => fileInputRef.current?.click()}>
+            Import CSV
+          </Btn>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            style={{ display: "none" }}
+            onChange={(e) => handleDealMachineCsvFile(e.target.files?.[0])}
+          />
           <Btn onClick={() => setShowNew(true)}>+ New lead</Btn>
           <Btn onClick={async () => { await load(); await loadCounts(); }}>
             {loading ? "Loading…" : "Refresh"}
@@ -288,7 +382,38 @@ export default function LeadsIndex() {
         />
       )}
 
-      {showImport && (
+      {importPreview && (
+        <ImportDealMachineModal
+          preview={importPreview}
+          busy={loading}
+          onClose={() => setImportPreview(null)}
+          onConfirmImport={async () => {
+            try {
+              setLoading(true);
+
+              const leadsToSend = importPreview.valid.map((v) => v.lead);
+
+              const result = await insertLeadsBulk(leadsToSend);
+
+              setImportPreview(null);
+              await load();
+              await loadCounts();
+
+              alert(
+                `Done.\nInserted: ${result.inserted}\nUpdated: ${result.updated}\nInvalid: ${result.skipped_invalid}`
+              );
+            } catch (e) {
+              console.error(e);
+              alert(e?.message || "Import failed.");
+            } finally {
+              setLoading(false);
+            }
+          }}
+
+        />
+      )}
+
+      {/* {showImport && (
         <ImportCsvModal
           onClose={() => setShowImport(false)}
           onDone={async () => {
@@ -297,7 +422,7 @@ export default function LeadsIndex() {
             await loadCounts();
           }}
         />
-      )}
+      )} */}
 
       {editLead && (
         <EditLeadModal
@@ -316,147 +441,147 @@ export default function LeadsIndex() {
 
 /* ------------------ Import CSV Modal ------------------ */
 
-function ImportCsvModal({ onClose, onDone }) {
-  const [file, setFile] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [summary, setSummary] = useState(null);
+// function ImportCsvModal({ onClose, onDone }) {
+//   const [file, setFile] = useState(null);
+//   const [busy, setBusy] = useState(false);
+//   const [summary, setSummary] = useState(null);
 
-  function parseFile(f) {
-    setSummary(null);
-    setFile(f);
-  }
+//   function parseFile(f) {
+//     setSummary(null);
+//     setFile(f);
+//   }
 
-  async function upload() {
-    if (!file) return;
+//   async function upload() {
+//     if (!file) return;
 
-    setBusy(true);
-    setSummary(null);
+//     setBusy(true);
+//     setSummary(null);
 
-    const text = await file.text();
-    const parsed = Papa.parse(text, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h) => h.trim(),
-    });
+//     const text = await file.text();
+//     const parsed = Papa.parse(text, {
+//       header: true,
+//       skipEmptyLines: true,
+//       transformHeader: (h) => h.trim(),
+//     });
 
-    if (parsed.errors?.length) {
-      setBusy(false);
-      alert(parsed.errors[0].message);
-      return;
-    }
+//     if (parsed.errors?.length) {
+//       setBusy(false);
+//       alert(parsed.errors[0].message);
+//       return;
+//     }
 
-    const rows = (parsed.data || []).map((r) => ({
-      phone: r.phone ?? r.Phone ?? r.PHONE ?? r["Phone Number"] ?? r["phone_number"],
-      email: r.email ?? r.Email,
-      first_name: r.first_name ?? r["first name"] ?? r.FirstName ?? r.First,
-      last_name: r.last_name ?? r["last name"] ?? r.LastName ?? r.Last,
-      street_address: r.street_address ?? r.address ?? r.Address ?? r["street address"],
-      unit: r.unit ?? r.Unit,
-      city: r.city ?? r.City,
-      state: r.state ?? r.State,
-      zipcode: r.zipcode ?? r.Zip ?? r.ZIP ?? r["zip code"],
-      raw_address: r.raw_address ?? r.RawAddress,
-      source: "csv_import",
-      source_ref: file.name,
-      status: "new",
-      // ✅ defaults you want
-      sms_subscription: null,
-      consent_marketing: null,
-      can_text: true,
-    }));
+//     const rows = (parsed.data || []).map((r) => ({
+//       phone: r.phone ?? r.Phone ?? r.PHONE ?? r["Phone Number"] ?? r["phone_number"],
+//       email: r.email ?? r.Email,
+//       first_name: r.first_name ?? r["first name"] ?? r.FirstName ?? r.First,
+//       last_name: r.last_name ?? r["last name"] ?? r.LastName ?? r.Last,
+//       street_address: r.street_address ?? r.address ?? r.Address ?? r["street address"],
+//       unit: r.unit ?? r.Unit,
+//       city: r.city ?? r.City,
+//       state: r.state ?? r.State,
+//       zipcode: r.zipcode ?? r.Zip ?? r.ZIP ?? r["zip code"],
+//       raw_address: r.raw_address ?? r.RawAddress,
+//       source: "csv_import",
+//       source_ref: file.name,
+//       status: "new",
+//       // ✅ defaults you want
+//       sms_subscription: null,
+//       consent_marketing: null,
+//       can_text: true,
+//     }));
 
-    const chunkSize = 500;
-    let inserted = 0;
-    let updated = 0;
-    let skipped_invalid = 0;
-    const invalid = [];
+//     const chunkSize = 500;
+//     let inserted = 0;
+//     let updated = 0;
+//     let skipped_invalid = 0;
+//     const invalid = [];
 
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
+//     for (let i = 0; i < rows.length; i += chunkSize) {
+//       const chunk = rows.slice(i, i + chunkSize);
 
-      const { data, error } = await supabase.functions.invoke("upsert-leads", {
-        body: { leads: chunk },
-      });
+//       const { data, error } = await supabase.functions.invoke("upsert-leads", {
+//         body: { leads: chunk },
+//       });
 
-      if (error) {
-        console.error(error);
-        setBusy(false);
-        alert(error.message);
-        return;
-      }
-      if (data?.error) {
-        setBusy(false);
-        alert(data.error);
-        return;
-      }
+//       if (error) {
+//         console.error(error);
+//         setBusy(false);
+//         alert(error.message);
+//         return;
+//       }
+//       if (data?.error) {
+//         setBusy(false);
+//         alert(data.error);
+//         return;
+//       }
 
-      inserted += data.inserted || 0;
-      updated += data.updated || 0;
-      skipped_invalid += data.skipped_invalid || 0;
-      if (Array.isArray(data.invalid)) invalid.push(...data.invalid.map((x) => ({ ...x, rowOffset: i })));
-    }
+//       inserted += data.inserted || 0;
+//       updated += data.updated || 0;
+//       skipped_invalid += data.skipped_invalid || 0;
+//       if (Array.isArray(data.invalid)) invalid.push(...data.invalid.map((x) => ({ ...x, rowOffset: i })));
+//     }
 
-    setBusy(false);
-    setSummary({ total: rows.length, inserted, updated, skipped_invalid, invalid: invalid.slice(0, 50) });
-  }
+//     setBusy(false);
+//     setSummary({ total: rows.length, inserted, updated, skipped_invalid, invalid: invalid.slice(0, 50) });
+//   }
 
-  return (
-    <ModalBackdrop onClick={onClose}>
-      <ModalCard onClick={(e) => e.stopPropagation()}>
-        <ModalTop>
-          <ModalTitle>Import leads CSV</ModalTitle>
-          <X onClick={onClose}>×</X>
-        </ModalTop>
+//   return (
+//     <ModalBackdrop onClick={onClose}>
+//       <ModalCard onClick={(e) => e.stopPropagation()}>
+//         <ModalTop>
+//           <ModalTitle>Import leads CSV</ModalTitle>
+//           <X onClick={onClose}>×</X>
+//         </ModalTop>
 
-        <Hint>
-          CSV should have a <b>phone</b> column. Other columns are optional (email, first_name, last_name, street_address, unit, city, state, zipcode).
-        </Hint>
+//         <Hint>
+//           CSV should have a <b>phone</b> column. Other columns are optional (email, first_name, last_name, street_address, unit, city, state, zipcode).
+//         </Hint>
 
-        <Field>
-          <Label>Choose CSV file</Label>
-          <Input type="file" accept=".csv,text/csv" onChange={(e) => parseFile(e.target.files?.[0] ?? null)} />
-        </Field>
+//         <Field>
+//           <Label>Choose CSV file</Label>
+//           <Input type="file" accept=".csv,text/csv" onChange={(e) => parseFile(e.target.files?.[0] ?? null)} />
+//         </Field>
 
-        <ModalBottom>
-          <Btn onClick={onClose} style={{ background: "rgba(47,47,50,0.06)" }}>
-            Cancel
-          </Btn>
-          <Btn onClick={upload} disabled={!file || busy}>
-            {busy ? "Importing…" : "Upload"}
-          </Btn>
-        </ModalBottom>
+//         <ModalBottom>
+//           <Btn onClick={onClose} style={{ background: "rgba(47,47,50,0.06)" }}>
+//             Cancel
+//           </Btn>
+//           <Btn onClick={upload} disabled={!file || busy}>
+//             {busy ? "Importing…" : "Upload"}
+//           </Btn>
+//         </ModalBottom>
 
-        {summary && (
-          <Summary>
-            <div>
-              <b>Total rows:</b> {summary.total}
-            </div>
-            <div>
-              <b>Inserted:</b> {summary.inserted}
-            </div>
-            <div>
-              <b>Updated:</b> {summary.updated}
-            </div>
-            <div>
-              <b>Invalid phones:</b> {summary.skipped_invalid}
-            </div>
-            {!!summary.invalid?.length && (
-              <>
-                <div style={{ marginTop: 10, fontWeight: 900 }}>Sample invalid rows (first 50):</div>
-                <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, opacity: 0.85 }}>
-                  {JSON.stringify(summary.invalid, null, 2)}
-                </pre>
-              </>
-            )}
-            <Btn onClick={onDone} style={{ marginTop: 10 }}>
-              Done
-            </Btn>
-          </Summary>
-        )}
-      </ModalCard>
-    </ModalBackdrop>
-  );
-}
+//         {summary && (
+//           <Summary>
+//             <div>
+//               <b>Total rows:</b> {summary.total}
+//             </div>
+//             <div>
+//               <b>Inserted:</b> {summary.inserted}
+//             </div>
+//             <div>
+//               <b>Updated:</b> {summary.updated}
+//             </div>
+//             <div>
+//               <b>Invalid phones:</b> {summary.skipped_invalid}
+//             </div>
+//             {!!summary.invalid?.length && (
+//               <>
+//                 <div style={{ marginTop: 10, fontWeight: 900 }}>Sample invalid rows (first 50):</div>
+//                 <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, opacity: 0.85 }}>
+//                   {JSON.stringify(summary.invalid, null, 2)}
+//                 </pre>
+//               </>
+//             )}
+//             <Btn onClick={onDone} style={{ marginTop: 10 }}>
+//               Done
+//             </Btn>
+//           </Summary>
+//         )}
+//       </ModalCard>
+//     </ModalBackdrop>
+//   );
+// }
 
 /* ------------------ Helpers ------------------ */
 

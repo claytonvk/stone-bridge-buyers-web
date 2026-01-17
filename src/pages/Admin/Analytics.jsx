@@ -576,7 +576,6 @@ const Wrap = styled.div`
   max-width: 1920px;
   margin: 0 auto;
   padding: 24px;
-  background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%);
   min-height: 100vh;
 
   @media (max-width: 768px) {

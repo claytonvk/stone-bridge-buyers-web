@@ -24,6 +24,7 @@ import Sms from "./Admin/Sms.jsx";
 import LeadsIndex from "./Admin/Leads/LeadsIndex.jsx";
 import LeadsStatus from "./Admin/Leads/LeadsStatus.jsx";
 import LeadDetail from "./Admin/Leads/LeadDetail.jsx";
+import Analytics from "./Admin/Analytics.jsx";
 
 export default function AppLayout() {
   const { pathname } = useLocation();
@@ -78,6 +79,8 @@ export default function AppLayout() {
             <Route path="sms" element={<Sms />} />
             <Route index element={<AdminDashboard />} />
             <Route path="forms" element={<AdminForms />} />
+
+            <Route path="analytics" element={<Analytics />} />
 
             {/* Leads routes */}
             <Route path="leads" element={<LeadsIndex />} />

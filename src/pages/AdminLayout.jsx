@@ -44,9 +44,10 @@ export default function AdminLayout() {
           <NavItem to="/admin" end>
             Dashboard
           </NavItem>
+          <NavItem to="/admin/analytics">Site Analytics</NavItem>
           <NavItem to="/admin/forms">Forms</NavItem>
-          <NavItem to="/admin/sms">SMS Flows</NavItem>
           <NavItem to="/admin/leads">Leads</NavItem>
+          <NavItem to="/admin/sms">SMS Flows</NavItem>
         </Nav>
       </Sidebar>
 

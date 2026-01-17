@@ -6,12 +6,10 @@ export default function AdminLayout() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
 
-  // Close drawer on route change (mobile)
   useEffect(() => {
     setOpen(false);
   }, [location.pathname]);
 
-  // Lock body scroll when drawer is open
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;

@@ -1,7 +1,7 @@
 // src/pages/Admin/Leads/LeadsIndex.jsx
 import React, { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
 import { supabase } from "../../../lib/supabaseClient.js";
 import EditLeadModal from "./EditLeadModal.jsx";
@@ -13,6 +13,10 @@ const STATUSES = ["new", "contacted", "followUp", "interested", "do_not_contact"
 
 export default function LeadsIndex() {
   const navigate = useNavigate();
+
+  const location = useLocation();
+  const params = useParams();
+  const selectedStatus = params.status ?? "all";
 
   const fileInputRef = useRef(null);
 
@@ -238,15 +242,40 @@ export default function LeadsIndex() {
       </Top>
 
       <Buckets>
-        <BucketLink to="/admin/leads" $active>
-          All <Count>{countsAll(counts)}</Count>
-        </BucketLink>
+        {/* Mobile dropdown */}
+        <MobileBucketRow>
+          <BucketLabel>Status</BucketLabel>
 
-        {STATUSES.map((s) => (
-          <BucketLink key={s} to={`/admin/leads/status/${s}`}>
-            {labelForStatus(s)} <Count>{counts?.[s] ?? "—"}</Count>
+          <BucketSelect
+            value={selectedStatus}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (next === "all") navigate("/admin/leads");
+              else navigate(`/admin/leads/status/${next}`);
+            }}
+            aria-label="Filter leads by status"
+          >
+            <option value="all">All ({countsAll(counts)})</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {labelForStatus(s)} ({counts?.[s] ?? 0})
+              </option>
+            ))}
+          </BucketSelect>
+        </MobileBucketRow>
+
+        {/* Desktop pills */}
+        <DesktopBuckets>
+          <BucketLink to="/admin/leads" $active={selectedStatus === "all"}>
+            All <Count>{countsAll(counts)}</Count>
           </BucketLink>
-        ))}
+
+          {STATUSES.map((s) => (
+            <BucketLink key={s} to={`/admin/leads/status/${s}`} $active={selectedStatus === s}>
+              {labelForStatus(s)} <Count>{counts?.[s] ?? "—"}</Count>
+            </BucketLink>
+          ))}
+        </DesktopBuckets>
       </Buckets>
 
       <Card>
@@ -665,21 +694,74 @@ const Buckets = styled.div`
   gap: 10px;
   flex-wrap: wrap;
   margin: 10px 0 14px;
+
+  @media (max-width: 700px) {
+    gap: 0;
+  }
 `;
 
 const BucketLink = styled(Link)`
   border: 1px solid rgba(47, 47, 50, 0.12);
-  background: rgba(255, 255, 255, 0.9);
+  background: ${(p) => (p.$active ? "rgba(125, 168, 193, 0.18)" : "rgba(255, 255, 255, 0.9)")};
   cursor: pointer;
   padding: 10px 12px;
   border-radius: 999px;
-  font-weight: 900;
-  color: #2f2f32;
+  font-weight: 1000;
+  color: ${(p) => (p.$active ? "rgba(47, 47, 50, 0.95)" : "#2f2f32")};
   display: inline-flex;
   align-items: center;
   gap: 8px;
   text-decoration: none;
+
+  &:hover {
+    background: ${(p) => (p.$active ? "rgba(125, 168, 193, 0.22)" : "rgba(47, 47, 50, 0.06)")};
+  }
 `;
+
+const MobileBucketRow = styled.div`
+  display: none;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+
+  @media (max-width: 700px) {
+    display: flex;
+  }
+`;
+
+const DesktopBuckets = styled.div`
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  @media (max-width: 700px) {
+    display: none;
+  }
+`;
+
+const BucketLabel = styled.div`
+  font-weight: 1000;
+  font-size: 12px;
+  color: rgba(47, 47, 50, 0.7);
+`;
+
+const BucketSelect = styled.select`
+  flex: 1;
+  min-width: 220px;
+
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(47, 47, 50, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  font-weight: 1000;
+  color: #2f2f32;
+
+  &:focus {
+    outline: none;
+    border-color: #7da8c1;
+  }
+`;
+
 
 const Count = styled.span`
   display: inline-grid;

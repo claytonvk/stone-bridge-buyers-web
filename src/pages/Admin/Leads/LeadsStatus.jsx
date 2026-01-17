@@ -11,7 +11,6 @@ const STATUSES = ["new", "contacted", "followUp", "interested", "do_not_contact"
 export default function LeadsStatus() {
   const { status } = useParams();
   const normalized = (status || "").trim();
-
   const navigate = useNavigate();
 
   if (!VALID.has(normalized)) return <Navigate to="/admin/leads" replace />;
@@ -122,15 +121,36 @@ export default function LeadsStatus() {
       </Top>
 
       <Buckets>
-        <BucketLink to="/admin/leads">
-          All <Count>{countsAll(counts)}</Count>
-        </BucketLink>
+        <MobileBucketRow>
+          <BucketLabel>Status</BucketLabel>
+          <BucketSelect
+            value={normalized}
+            onChange={(e) => {
+              const next = e.target.value;
+              navigate(next === "all" ? "/admin/leads" : `/admin/leads/status/${next}`);
+            }}
+            aria-label="Filter leads by status"
+          >
+            <option value="all">All ({countsAll(counts)})</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {labelForStatus(s)} ({counts?.[s] ?? 0})
+              </option>
+            ))}
+          </BucketSelect>
+        </MobileBucketRow>
 
-        {STATUSES.map((s) => (
-          <BucketLink key={s} to={`/admin/leads/status/${s}`} $active={s === normalized}>
-            {labelForStatus(s)} <Count>{counts?.[s] ?? "—"}</Count>
+        <DesktopBuckets>
+          <BucketLink to="/admin/leads" $active={false}>
+            All <Count>{countsAll(counts)}</Count>
           </BucketLink>
-        ))}
+
+          {STATUSES.map((s) => (
+            <BucketLink key={s} to={`/admin/leads/status/${s}`} $active={s === normalized}>
+              {labelForStatus(s)} <Count>{counts?.[s] ?? "—"}</Count>
+            </BucketLink>
+          ))}
+        </DesktopBuckets>
       </Buckets>
 
       <Card>
@@ -151,6 +171,7 @@ export default function LeadsStatus() {
                 <Th>Actions</Th>
               </tr>
             </thead>
+
             <tbody>
               {!loading && rows.length === 0 && (
                 <tr>
@@ -248,8 +269,6 @@ export default function LeadsStatus() {
   );
 }
 
-/* ------------------ Helpers ------------------ */
-
 function fmt(iso) {
   if (!iso) return "—";
   try {
@@ -278,8 +297,6 @@ function labelForStatus(s) {
 function countsAll(counts) {
   return Object.values(counts || {}).reduce((a, b) => a + (Number(b) || 0), 0);
 }
-
-/* ------------------ Styles ------------------ */
 
 const Wrap = styled.div`
   max-width: 1800px;
@@ -323,6 +340,54 @@ const Buckets = styled.div`
   gap: 10px;
   flex-wrap: wrap;
   margin: 10px 0 14px;
+
+  @media (max-width: 700px) {
+    gap: 0;
+  }
+`;
+
+const MobileBucketRow = styled.div`
+  display: none;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+
+  @media (max-width: 700px) {
+    display: flex;
+  }
+`;
+
+const DesktopBuckets = styled.div`
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  @media (max-width: 700px) {
+    display: none;
+  }
+`;
+
+const BucketLabel = styled.div`
+  font-weight: 1000;
+  font-size: 12px;
+  color: rgba(47, 47, 50, 0.7);
+`;
+
+const BucketSelect = styled.select`
+  flex: 1;
+  min-width: 220px;
+
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(47, 47, 50, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  font-weight: 1000;
+  color: #2f2f32;
+
+  &:focus {
+    outline: none;
+    border-color: #7da8c1;
+  }
 `;
 
 const BucketLink = styled(Link)`
@@ -332,11 +397,15 @@ const BucketLink = styled(Link)`
   padding: 10px 12px;
   border-radius: 999px;
   font-weight: 900;
-  color: #2f2f32;
+  color: ${(p) => (p.$active ? "rgba(47,47,50,0.95)" : "#2f2f32")};
   display: inline-flex;
   align-items: center;
   gap: 8px;
   text-decoration: none;
+
+  &:hover {
+    background: ${(p) => (p.$active ? "rgba(125,168,193,0.22)" : "rgba(47,47,50,0.06)")};
+  }
 `;
 
 const Count = styled.span`

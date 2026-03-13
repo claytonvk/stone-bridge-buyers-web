@@ -1,12 +1,11 @@
 import React, { useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import {
   BadgeCheck,
   Clock,
   Hammer,
   ShieldCheck,
-  Sparkles,
   MapPin,
   ArrowRight,
 } from "lucide-react";
@@ -29,8 +28,6 @@ function safeSlug(slug = "") {
 function toJsonLd(obj) {
   return JSON.stringify(obj).replace(/</g, "\\u003c");
 }
-
-const BRAND_DEFAULT = "Stone Bridge Buyers";
 
 // Keep Texas special. Everything else uses the nationwide template.
 // You can optionally add a few states with extra detail later.
@@ -60,9 +57,10 @@ function getStateConfig(stateSlug, stateName) {
 
 export default function Location({
   brandName = "Stone Bridge Buyers",
-  baseUrl = "https://YOUR_DOMAIN.com", // TODO: change
-  onPrimaryCtaClick,
+  baseUrl = "https://sontebridgebuyers.com"
 }) {
+
+  const navigate = useNavigate();
 
   const { state } = useParams();
   const stateSlug = safeSlug(state || "texas");
@@ -148,6 +146,8 @@ export default function Location({
       desc: "We explain everything clearly and handle the steps.",
     },
   ];
+
+  const onPrimaryCtaClick = () => navigate("/contact");
 
   return (
     <Page>
